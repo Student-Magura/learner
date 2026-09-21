@@ -10,5 +10,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // fake-indexeddb schedules its callbacks via setImmediate; faking it too would
+    // make every IndexedDB operation hang under vi.useFakeTimers() (syncEngine.test.ts).
+    fakeTimers: { toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] },
   },
 });
