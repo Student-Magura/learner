@@ -1,4 +1,5 @@
 import { openDB } from 'idb';
+import { mergeProgress } from './mergeProgress';
 import type { DBSchema, IDBPDatabase } from 'idb';
 import type { Course, ProgressMap, ProgressRecord } from '../types';
 
@@ -22,7 +23,12 @@ export type LearnerDb = {
   deleteCourse(id: string): Promise<void>;
   getProgress(): Promise<ProgressMap>;
   putProgressRecord(fileId: string, record: ProgressRecord): Promise<void>;
-  replaceProgress(map: ProgressMap): Promise<void>;
+  /**
+   * Вливає `map` у те, що ЗАРАЗ у сховищі, одною readwrite-транзакцією, і
+   * повертає результат. Нічого не видаляє: запис, який зʼявився, поки
+   * викликач ходив у мережу, мусить вижити (див. syncEngine).
+   */
+  mergeIntoProgress(map: ProgressMap): Promise<ProgressMap>;
   getMeta<T>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
 };
@@ -58,13 +64,21 @@ export async function openLearnerDb(name = 'learner'): Promise<LearnerDb> {
       await db.put('progress', { fileId, ...record });
     },
 
-    replaceProgress: async (map) => {
+    mergeIntoProgress: async (map) => {
       const tx = db.transaction('progress', 'readwrite');
-      await tx.store.clear();
-      for (const [fileId, record] of Object.entries(map)) {
+      const rows = await tx.store.getAll();
+      const current: ProgressMap = {};
+      for (const { fileId, ...record } of rows) current[fileId] = record;
+
+      // Поточний вміст сховища йде першим аргументом: при однаковому updatedAt
+      // mergeProgress лишає перший, а це саме той бік, куди міг приїхати свіжий
+      // локальний запис, поки викликач був у мережі.
+      const merged = mergeProgress(current, map);
+      for (const [fileId, record] of Object.entries(merged)) {
         await tx.store.put({ fileId, ...record });
       }
       await tx.done;
+      return merged;
     },
 
     getMeta: async <T>(key: string) => (await db.get('meta', key))?.value as T | undefined,

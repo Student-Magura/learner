@@ -61,11 +61,42 @@ describe('прогрес', () => {
     expect(progress.v1?.positionSec).toBe(42);
   });
 
-  it('replaceProgress повністю замінює вміст', async () => {
+  it('mergeIntoProgress доливає записи, не видаляючи наявні', async () => {
     await db.putProgressRecord('old', rec());
-    await db.replaceProgress({ fresh: rec({ positionSec: 7 }) });
+    const merged = await db.mergeIntoProgress({ fresh: rec({ positionSec: 7 }) });
     const progress = await db.getProgress();
-    expect(Object.keys(progress)).toEqual(['fresh']);
+    expect(Object.keys(progress).sort()).toEqual(['fresh', 'old']);
+    expect(Object.keys(merged).sort()).toEqual(['fresh', 'old']);
+  });
+
+  it('mergeIntoProgress віддає свіжішому updatedAt перемогу', async () => {
+    await db.putProgressRecord('v1', rec({ positionSec: 10, updatedAt: 100 }));
+    await db.mergeIntoProgress({ v1: rec({ positionSec: 90, updatedAt: 500 }) });
+    await expect(db.getProgress()).resolves.toMatchObject({ v1: { positionSec: 90 } });
+  });
+
+  it('mergeIntoProgress не затирає запис з тим самим updatedAt, що вже у сховищі', async () => {
+    await db.putProgressRecord('v1', rec({ positionSec: 90, completed: true, updatedAt: 100 }));
+    await db.mergeIntoProgress({ v1: rec({ positionSec: 10, completed: false, updatedAt: 100 }) });
+    await expect(db.getProgress()).resolves.toMatchObject({ v1: { completed: true } });
+  });
+
+  it('запис, зроблений паралельно зі злиттям, не зникає', async () => {
+    // Саме той випадок, що губив відмітку «переглянуто»: злиття вже стартувало
+    // (і не бачить нового запису у своєму вхідному map), а користувач тим часом
+    // тисне чекбокс. Транзакція злиття не має права його знести.
+    await db.putProgressRecord('v1', rec({ updatedAt: 100 }));
+
+    const merging = db.mergeIntoProgress({ v1: rec({ positionSec: 20, updatedAt: 200 }) });
+    const concurrent = db.putProgressRecord(
+      'v2',
+      rec({ positionSec: 99, completed: true, updatedAt: 300 }),
+    );
+    await Promise.all([merging, concurrent]);
+
+    const progress = await db.getProgress();
+    expect(progress.v2).toMatchObject({ positionSec: 99, completed: true });
+    expect(progress.v1).toMatchObject({ positionSec: 20 });
   });
 
   it('видалення курсу не чіпає прогрес — записи не втрачаються', async () => {

@@ -49,6 +49,16 @@ function fakeDrive(remote: ProgressMap | null = null): FakeDrive {
   return drive;
 }
 
+/**
+ * Дає дебоунсному проходу дійти до кінця: його IndexedDB-колбеки — макротаски
+ * на setImmediate, який підміна таймерів навмисно не чіпає.
+ */
+async function waitForSync(drive: FakeDrive): Promise<void> {
+  for (let i = 0; i < 50 && drive.writes === 0; i += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
 let db: LearnerDb;
 let counter = 0;
 
@@ -120,7 +130,7 @@ describe('syncNow', () => {
 
   it('не пише у Drive, коли нічого не змінилося', async () => {
     const drive = fakeDrive({ v1: rec(100, 10) });
-    await db.replaceProgress({ v1: rec(100, 10) });
+    await db.putProgressRecord('v1', rec(100, 10));
     const engine = createSyncEngine(db, drive);
 
     // Перший прохід може пушити (немає збереженого знімка), тому міряємо steady state
@@ -149,6 +159,33 @@ describe('syncNow', () => {
 
     expect(drive.writes).toBe(2);
     expect(drive.remote?.v2?.positionSec).toBe(20);
+  });
+
+  it('не губить відмітку, що зʼявилася поки тривало читання віддаленого файлу', async () => {
+    // Двопристроєвий сценарій: інший пристрій щось записав, тому цей робить pull.
+    // Поки readAppData у польоті, користувач тисне «Переглянуто» — запис лягає в
+    // IndexedDB уже після того, як syncEngine зробив свій знімок local.
+    const drive = fakeDrive({ 'v-other': rec(200, 50) });
+    await db.putProgressRecord('v1', rec(100, 10));
+
+    drive.readAppData = vi.fn(async () => {
+      await db.putProgressRecord('v-ticked', {
+        positionSec: 0,
+        durationSec: 100,
+        completed: true,
+        updatedAt: 400,
+      });
+      return { content: drive.remote, modifiedTime: drive.modifiedTime };
+    });
+
+    const merged = await createSyncEngine(db, drive).syncNow();
+
+    // 1. Запис лишився у сховищі — саме те, що раніше знищував clear().
+    await expect(db.getProgress()).resolves.toHaveProperty('v-ticked');
+    // 2. Він же попав у результат злиття і в те, що поїхало в Drive, — інакше
+    //    збережений знімок pushedProgress «замаскував» би його назавжди.
+    expect(merged['v-ticked']?.completed).toBe(true);
+    expect(drive.remote?.['v-ticked']?.completed).toBe(true);
   });
 
   it('ігнорує зламані записи у віддаленому файлі, не втрачаючи решту', async () => {
@@ -197,6 +234,10 @@ describe('scheduleSync і flush', () => {
     expect(drive.writeAppData).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(10_000);
+    // Прохід синхронізації робить кілька IndexedDB-обертів, а їхні колбеки
+    // йдуть через setImmediate (навмисно не підмінений — див. vite.config.ts),
+    // тому advanceTimersByTimeAsync сам по собі не дочекається кінця ланцюжка.
+    await waitForSync(drive);
     expect(drive.writeAppData).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -213,6 +254,7 @@ describe('scheduleSync і flush', () => {
     await vi.advanceTimersByTimeAsync(4_000);
     engine.scheduleSync();
     await vi.advanceTimersByTimeAsync(10_000);
+    await waitForSync(drive);
 
     expect(drive.writeAppData).toHaveBeenCalledTimes(1);
     vi.useRealTimers();

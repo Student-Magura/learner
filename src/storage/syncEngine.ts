@@ -91,11 +91,11 @@ export function createSyncEngine(
       remote = parseProgress(payload?.content);
     }
 
-    const merged = mergeProgress(local, remote);
-
-    if (!sameProgress(merged, local)) {
-      await db.replaceProgress(merged);
-    }
+    // `local` — знімок, зроблений ДО мережевих походів вище. За цей час
+    // користувач міг щось відмітити, тому остаточне злиття робиться проти
+    // поточного вмісту сховища, в одній транзакції з записом: інакше запис,
+    // що приїхав у вікно очікування, зник би зі сховища назавжди.
+    const merged = await db.mergeIntoProgress(mergeProgress(local, remote));
 
     // Пушимо, якщо те, що ми надіслали б, відрізняється від того, що ми надсилали
     // востаннє — а не лише тоді, коли ІНШИЙ пристрій щось змінив: локальний прогрес
