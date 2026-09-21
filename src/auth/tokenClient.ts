@@ -21,6 +21,8 @@ type GisResponse = {
 
 type GisClient = { requestAccessToken(opts?: { prompt?: string }): void };
 
+type Waiter = { resolve(t: string): void; reject(e: Error): void };
+
 export type TokenClient = {
   signIn(): Promise<string>;
   getToken(opts?: { force?: boolean }): Promise<string>;
@@ -31,7 +33,12 @@ export type TokenClient = {
 export function createTokenClient(clientId: string): TokenClient {
   let token: string | null = null;
   let expiresAt = 0;
-  let pending: { resolve(t: string): void; reject(e: Error): void } | null = null;
+  // Запит, що зараз летить до GIS, і всі, хто на нього чекає.
+  let pending: { waiters: Waiter[] } | null = null;
+  // Черга waiter-ів, яким недостатньо результату запиту з `pending` (див.
+  // request нижче) — для них одразу після завершення поточного запускається
+  // ще один, спільний для всіх, хто встиг доєднатися.
+  let queuedNext: { waiters: Waiter[] } | null = null;
   const listeners = new Set<(signedIn: boolean) => void>();
 
   const gis: GisClient = (
@@ -52,16 +59,26 @@ export function createTokenClient(clientId: string): TokenClient {
     client_id: clientId,
     scope: DRIVE_SCOPES,
     callback: (resp) => {
-      const waiting = pending;
+      const waiters = pending?.waiters ?? [];
+      const next = queuedNext;
       pending = null;
+      queuedNext = null;
       if (!resp.access_token) {
-        waiting?.reject(new AuthRequiredError(resp.error ?? 'Не вдалося отримати токен'));
-        return;
+        const err = new AuthRequiredError(resp.error ?? 'Не вдалося отримати токен');
+        // Відкликаний/протермінований запит не повинен лишати старий токен
+        // «свіжим» у кеші — інакше getToken() ще до години віддаватиме
+        // мертвий токен замість негайного переходу на екран входу.
+        token = null;
+        expiresAt = 0;
+        notify(false);
+        for (const waiter of waiters) waiter.reject(err);
+      } else {
+        token = resp.access_token;
+        expiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000;
+        notify(true);
+        for (const waiter of waiters) waiter.resolve(token);
       }
-      token = resp.access_token;
-      expiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000;
-      notify(true);
-      waiting?.resolve(token);
+      if (next) startRequest('', next.waiters);
     },
   });
 
@@ -69,12 +86,32 @@ export function createTokenClient(clientId: string): TokenClient {
     for (const cb of listeners) cb(signedIn);
   }
 
-  function request(prompt: string): Promise<string> {
-    // Один запит за раз: GIS має єдиний колбек, паралельні виклики його переплутають.
-    if (pending) return Promise.reject(new Error('Запит токена вже виконується'));
+  function startRequest(prompt: string, waiters: Waiter[]) {
+    pending = { waiters };
+    gis.requestAccessToken({ prompt });
+  }
+
+  function request(prompt: string, requireFreshStart = false): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      pending = { resolve, reject };
-      gis.requestAccessToken({ prompt });
+      const waiter: Waiter = { resolve, reject };
+      if (!pending) {
+        startRequest(prompt, [waiter]);
+        return;
+      }
+      if (!requireFreshStart) {
+        // Кілька одночасних викликів об'єднуються в один запит до GIS:
+        // у GIS єдиний колбек, паралельні requestAccessToken переплутали б його.
+        pending.waiters.push(waiter);
+        return;
+      }
+      // requireFreshStart (force): викликач не може задовольнитися токеном із
+      // запиту, що вже летить, — той міг стартувати до цього виклику
+      // (наприклад, фонове тихе поновлення) і повернути саме той токен, який
+      // щойно отримав 401 від Drive. Черга запускає свіжий запит одразу
+      // після завершення поточного; усі, хто прийшов з force, поки той
+      // запит летить, розділяють один спільний наступний запит.
+      if (!queuedNext) queuedNext = { waiters: [] };
+      queuedNext.waiters.push(waiter);
     });
   }
 
@@ -88,7 +125,9 @@ export function createTokenClient(clientId: string): TokenClient {
       // force потрібен, коли Drive відповів 401 на токен, що за годинником ще свіжий.
       if (!force && isFresh()) return token!;
       // prompt: '' — тихе поновлення без вікна, якщо сесія Google ще жива.
-      return request('');
+      // force передається як requireFreshStart, щоб гарантувати токен,
+      // отриманий уже після цього виклику (див. request).
+      return request('', force);
     },
     signOut: () => {
       token = null;

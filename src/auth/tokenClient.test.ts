@@ -92,4 +92,66 @@ describe('tokenClient', () => {
 
     expect(seen).toEqual([true, false]);
   });
+
+  it('getToken об’єднує одночасні виклики в один запит до GIS', async () => {
+    const client = createTokenClient('cid');
+    const first = client.getToken();
+    const second = client.getToken();
+
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+
+    await expect(first).resolves.toBe('tok-1');
+    await expect(second).resolves.toBe('tok-1');
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('після невдалого forced-поновлення старий токен більше не вважається свіжим', async () => {
+    const client = createTokenClient('cid');
+    const seen: boolean[] = [];
+    client.onChange((v) => seen.push(v));
+
+    const first = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await first;
+
+    const forced = client.getToken({ force: true });
+    callback({ error: 'interaction_required' });
+    await expect(forced).rejects.toBeInstanceOf(AuthRequiredError);
+
+    requestAccessToken.mockClear();
+    const after = client.getToken();
+    expect(requestAccessToken).toHaveBeenCalledWith({ prompt: '' });
+    callback({ access_token: 'tok-2', expires_in: 3600 });
+    await expect(after).resolves.toBe('tok-2');
+
+    expect(seen).toEqual([true, false, true]);
+  });
+
+  it('getToken({ force: true }) під час активного тихого поновлення не бере його результат', async () => {
+    const client = createTokenClient('cid');
+    const first = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await first;
+    requestAccessToken.mockClear();
+
+    // Токен от-от протермінується: фонове тихе поновлення вже в польоті.
+    vi.setSystemTime(new Date('2026-09-20T12:59:30Z'));
+    const silent = client.getToken();
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+
+    // Паралельно Drive відповів 401 — форс-виклик не має заспокоюватись
+    // токеном із запиту, що стартував до нього.
+    const forced = client.getToken({ force: true });
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await expect(silent).resolves.toBe('tok-1');
+
+    // Форс-виклик отримав власний, окремий запит замість токена, що щойно
+    // повернувся з уже застарілого польоту.
+    expect(requestAccessToken).toHaveBeenCalledTimes(2);
+    callback({ access_token: 'tok-2', expires_in: 3600 });
+    await expect(forced).resolves.toBe('tok-2');
+  });
 });
