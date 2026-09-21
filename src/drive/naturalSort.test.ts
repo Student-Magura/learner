@@ -31,4 +31,9 @@ describe('naturalCompare', () => {
   it('не падає на назвах без цифр', () => {
     expect(['Бета', 'Альфа'].sort(naturalCompare)).toEqual(['Альфа', 'Бета']);
   });
+
+  it('розрізняє великі й малі літери', () => {
+    // Names differing only by case must NOT compare equal (non-zero result)
+    expect(naturalCompare('Alpha', 'alpha')).not.toBe(0);
+  });
 });
