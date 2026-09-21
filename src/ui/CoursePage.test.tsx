@@ -36,7 +36,7 @@ const course: Course = {
   },
 };
 
-function renderPage(progress: ProgressMap = {}, onRescan = vi.fn()) {
+function renderPage(progress: ProgressMap = {}, onRescan = vi.fn(async () => {})) {
   render(
     <MemoryRouter>
       <CoursePage course={course} progress={progress} onRescan={onRescan} />
@@ -104,11 +104,23 @@ describe('CoursePage', () => {
     expect(onRescan).toHaveBeenCalledTimes(1);
   });
 
+  it('показує причину, коли оновлення структури впало', async () => {
+    // Раніше відхилення ковталося в App і кнопка просто нічого не робила.
+    const onRescan = vi.fn(async () => {
+      throw new Error('Папку не знайдено або до неї немає доступу.');
+    });
+    renderPage({}, onRescan);
+
+    await userEvent.click(screen.getByRole('button', { name: /оновити структуру/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/немає доступу/i);
+  });
+
   it('на курсі без відео не показує кнопку продовження', () => {
     const empty: Course = { ...course, tree: { ...course.tree, children: [] } };
     render(
       <MemoryRouter>
-        <CoursePage course={empty} progress={{}} onRescan={vi.fn()} />
+        <CoursePage course={empty} progress={{}} onRescan={vi.fn(async () => {})} />
       </MemoryRouter>,
     );
     expect(screen.queryByRole('link', { name: /продовжити|почати курс/i })).toBeNull();

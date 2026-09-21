@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ProgressBar } from './ProgressBar';
 import { TreeSection } from './TreeSection';
@@ -7,10 +8,13 @@ import type { Course, ProgressMap } from '../types';
 export type CoursePageProps = {
   course: Course;
   progress: ProgressMap;
-  onRescan(): void;
+  /** Може відхилитися — наприклад, якщо права на папку змінилися. */
+  onRescan(): Promise<void>;
 };
 
 export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const stats = aggregate(course.tree, progress);
   const resumeId = findResumeVideoId(course, progress);
   const started = stats.completedCount > 0 || stats.ratio > 0;
@@ -40,12 +44,31 @@ export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
         )}
         <button
           type="button"
-          onClick={onRescan}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm"
+          disabled={rescanning}
+          onClick={() => {
+            setRescanning(true);
+            setRescanError(null);
+            onRescan()
+              .catch((cause: unknown) => {
+                // Без цього кнопка просто нічого не робила: відхилення
+                // ковталося, і користувач не дізнавався, що сканування впало.
+                setRescanError(
+                  cause instanceof Error ? cause.message : 'Не вдалося оновити структуру курсу',
+                );
+              })
+              .finally(() => setRescanning(false));
+          }}
+          className="rounded border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50"
         >
-          Оновити структуру
+          {rescanning ? 'Оновлюємо…' : 'Оновити структуру'}
         </button>
       </div>
+
+      {rescanError && (
+        <p role="alert" className="text-sm text-red-700">
+          {rescanError}
+        </p>
+      )}
 
       {course.tree.children.length === 0 ? (
         <p className="text-zinc-500">

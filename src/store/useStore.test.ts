@@ -75,6 +75,65 @@ describe('init', () => {
   });
 });
 
+describe('syncFromRemote і flushSync', () => {
+  it('вливає прогрес з іншого пристрою в стан, не чекаючи перезавантаження', async () => {
+    // Без цього довгоживуча вкладка ніколи не бачила чужого прогресу.
+    const sync = fakeSync();
+    const store = createLearnerStore({ db, api: fakeApi(), sync, now: () => 1 });
+    await store.getState().init();
+    await store.getState().setPosition('mine', 10, 100);
+
+    sync.syncNow = vi.fn(async () => ({
+      theirs: { positionSec: 70, durationSec: 100, completed: true, updatedAt: 900 },
+    }));
+    await store.getState().syncFromRemote();
+
+    expect(store.getState().progress.theirs?.completed).toBe(true);
+    // Свій прогрес нікуди не подівся.
+    expect(store.getState().progress.mine?.positionSec).toBe(10);
+  });
+
+  it('свіжіший локальний запис не затирається результатом синхронізації', async () => {
+    let clock = 100;
+    const sync = fakeSync();
+    const store = createLearnerStore({ db, api: fakeApi(), sync, now: () => clock });
+    await store.getState().init();
+
+    clock = 900;
+    await store.getState().setCompleted('v1', true);
+
+    sync.syncNow = vi.fn(async () => ({
+      v1: { positionSec: 1, durationSec: 100, completed: false, updatedAt: 200 },
+    }));
+    await store.getState().syncFromRemote();
+
+    expect(store.getState().progress.v1?.completed).toBe(true);
+  });
+
+  it('відмова синхронізації не валить стан', async () => {
+    const sync = fakeSync();
+    sync.syncNow = vi.fn(async () => {
+      throw new Error('офлайн');
+    });
+    const store = createLearnerStore({ db, api: fakeApi(), sync, now: () => 1 });
+    await store.getState().init();
+    await store.getState().setPosition('v1', 10, 100);
+
+    await expect(store.getState().syncFromRemote()).resolves.toBeUndefined();
+    expect(store.getState().progress.v1?.positionSec).toBe(10);
+  });
+
+  it('flushSync форсує відкладену синхронізацію', async () => {
+    const sync = fakeSync();
+    const store = createLearnerStore({ db, api: fakeApi(), sync });
+    await store.getState().init();
+
+    await store.getState().flushSync();
+
+    expect(sync.flush).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('addCourse', () => {
   it('додає курс за посиланням на папку', async () => {
     const store = createLearnerStore({ db, api: fakeApi(), sync: fakeSync() });
@@ -127,6 +186,21 @@ describe('addCourse', () => {
     await store.getState().addCourse(ROOT_ID);
 
     expect(store.getState().courses).toHaveLength(1);
+  });
+});
+
+describe('rescanCourse', () => {
+  it('перетворює 403 від Drive у зрозумілу підказку, а не ковтає помилку', async () => {
+    const api = fakeApi();
+    const store = createLearnerStore({ db, api, sync: fakeSync() });
+    await store.getState().init();
+    await store.getState().addCourse(ROOT_ID);
+
+    api.getFile = vi.fn(async () => {
+      throw new DriveError(403, 'Drive API 403 Forbidden');
+    });
+
+    await expect(store.getState().rescanCourse(ROOT_ID)).rejects.toThrow(/доступ/i);
   });
 });
 

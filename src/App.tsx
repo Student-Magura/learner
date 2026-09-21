@@ -15,11 +15,12 @@ type Services = Awaited<ReturnType<typeof createServices>>;
 export default function App() {
   const [store, setStore] = useState<Store | null>(null);
   const [tokenClient, setTokenClient] = useState<TokenClient | null>(null);
+  const [refreshToken, setRefreshToken] = useState<(() => Promise<void>) | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
 
   // servicesRef caches the createServices() PROMISE itself (not just a boolean),
-  // so React 18 StrictMode's dev-only double-invoke of this effect (mount →
+  // so React 19 StrictMode's dev-only double-invoke of this effect (mount →
   // cleanup → mount again) cannot start a second call: the second invocation
   // reuses the same in-flight/resolved promise. createServices() attaches a
   // 'controllerchange' listener it never removes, so calling it twice would
@@ -31,10 +32,15 @@ export default function App() {
     servicesRef.current ??= createServices();
 
     servicesRef.current
-      .then(({ tokenClient: client, ...deps }) => {
+      .then(({ tokenClient: client, refreshToken: refresh, ...deps }) => {
         if (!active) return;
         setTokenClient(client);
-        setStore(createLearnerStore(deps));
+        // Обидва значення — функції, тому обгортка обов'язкова: setState
+        // приймає функцію за оновлювач і викликає її. Для стора це означало
+        // виклик zustand-хука поза рендером — застосунок падав на порушенні
+        // порядку хуків і не проходив далі екрана завантаження.
+        setRefreshToken(() => refresh);
+        setStore(() => createLearnerStore(deps));
         client.onChange(setSignedIn);
       })
       .catch((cause: unknown) => {
@@ -54,17 +60,26 @@ export default function App() {
     return <main className="mx-auto max-w-xl p-8 text-zinc-500">Завантаження…</main>;
   }
 
-  return <SignInGate store={store} tokenClient={tokenClient} signedIn={signedIn} />;
+  return (
+    <SignInGate
+      store={store}
+      tokenClient={tokenClient}
+      signedIn={signedIn}
+      refreshToken={refreshToken ?? undefined}
+    />
+  );
 }
 
 function SignInGate({
   store,
   tokenClient,
   signedIn,
+  refreshToken,
 }: {
   store: Store;
   tokenClient: TokenClient;
   signedIn: boolean;
+  refreshToken?: () => Promise<void>;
 }) {
   const [signingIn, setSigningIn] = useState(false);
 
@@ -92,10 +107,16 @@ function SignInGate({
     );
   }
 
-  return <SignedInApp store={store} />;
+  return <SignedInApp store={store} refreshToken={refreshToken} />;
 }
 
-function SignedInApp({ store }: { store: Store }) {
+function SignedInApp({
+  store,
+  refreshToken,
+}: {
+  store: Store;
+  refreshToken?: () => Promise<void>;
+}) {
   const state = store();
 
   // init читає сховище й зливає прогрес — рівно один раз за монтування.
@@ -104,6 +125,23 @@ function SignedInApp({ store }: { store: Store }) {
   useEffect(() => {
     void state.init();
   }, []);
+
+  // Дебоунс 10 с не переживає закриття вкладки, а довгоживуча вкладка сама
+  // ніколи не дізнається про прогрес з іншого пристрою. Дії беремо через
+  // getState(): вони стабільні, тому ефект не залежить від рендеру.
+  useEffect(() => {
+    const flush = () => void store.getState().flushSync();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void store.getState().syncFromRemote();
+    };
+
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [store]);
 
   if (!state.ready) {
     return <main className="mx-auto max-w-xl p-8 text-zinc-500">Завантаження курсів…</main>;
@@ -125,7 +163,10 @@ function SignedInApp({ store }: { store: Store }) {
         }
       />
       <Route path="/course/:courseId" element={<CourseRoute state={state} />} />
-      <Route path="/course/:courseId/lesson/:videoId" element={<LessonRoute state={state} />} />
+      <Route
+        path="/course/:courseId/lesson/:videoId"
+        element={<LessonRoute state={state} refreshToken={refreshToken} />}
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -143,12 +184,18 @@ function CourseRoute({ state }: { state: LearnerState }) {
     <CoursePage
       course={course}
       progress={state.progress}
-      onRescan={() => void state.rescanCourse(course.id)}
+      onRescan={() => state.rescanCourse(course.id)}
     />
   );
 }
 
-function LessonRoute({ state }: { state: LearnerState }) {
+function LessonRoute({
+  state,
+  refreshToken,
+}: {
+  state: LearnerState;
+  refreshToken?: () => Promise<void>;
+}) {
   const { courseId, videoId } = useParams();
   const course = state.courses.find((c) => c.id === courseId);
   if (!course || !videoId) return <Navigate to="/" replace />;
@@ -162,6 +209,7 @@ function LessonRoute({ state }: { state: LearnerState }) {
         void state.setPosition(fileId, positionSec, durationSec)
       }
       onToggleCompleted={(fileId, completed) => void state.setCompleted(fileId, completed)}
+      onRecoverToken={refreshToken}
     />
   );
 }
