@@ -14,7 +14,7 @@ function junk(id: string, name: string): DriveFile {
   return { id, name, mimeType: 'application/octet-stream', trashed: false, durationSec: null };
 }
 
-export const ROOT_ID = 'root-course';
+export const ROOT_ID = 'root-course-fixture-000000000';
 
 /**
  * Зліплено зі структури реального курсу: модулі з номерами, вкладені підрозділи,
