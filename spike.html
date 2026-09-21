@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SW media proxy spike</title>
+    <style>
+      body { font-family: system-ui; padding: 16px; max-width: 720px; }
+      input { width: 100%; padding: 8px; margin: 4px 0 12px; }
+      video { width: 100%; background: #000; }
+      pre { background: #f4f4f5; padding: 8px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Спайк: медіа через Service Worker</h1>
+    <label>Access token (gcloud auth print-access-token)</label>
+    <input id="token" autocomplete="off" />
+    <label>Drive fileId відео</label>
+    <input id="fileId" value="10duPIS8qJnVzoWoRXVeG6YNkFr2Gb-fk" />
+    <button id="go">Завантажити</button>
+    <p id="status">Service Worker: не зареєстровано</p>
+    <video id="v" controls playsinline></video>
+    <pre id="log"></pre>
+
+    <script type="module">
+      const statusEl = document.getElementById('status');
+      const logEl = document.getElementById('log');
+      const video = document.getElementById('v');
+      const log = (m) => { logEl.textContent += m + '\n'; };
+
+      if (!('serviceWorker' in navigator)) {
+        statusEl.textContent = 'Service Worker: НЕ ПІДТРИМУЄТЬСЯ — вердикт fallback';
+      } else {
+        const reg = await navigator.serviceWorker.register('/sw-spike.js');
+        await navigator.serviceWorker.ready;
+        statusEl.textContent = 'Service Worker: активний (scope ' + reg.scope + ')';
+      }
+
+      for (const ev of ['loadedmetadata', 'canplay', 'playing', 'error', 'stalled', 'waiting']) {
+        video.addEventListener(ev, () => {
+          log(ev + (ev === 'loadedmetadata' ? ' duration=' + video.duration : ''));
+        });
+      }
+
+      document.getElementById('go').addEventListener('click', async () => {
+        logEl.textContent = '';
+        const token = document.getElementById('token').value.trim();
+        const fileId = document.getElementById('fileId').value.trim();
+        navigator.serviceWorker.controller?.postMessage({ type: 'SET_TOKEN', token });
+        // Даємо воркеру мить прийняти токен, інакше перший запит піде без нього.
+        await new Promise((r) => setTimeout(r, 100));
+        video.src = '/media/' + fileId;
+        video.load();
+      });
+    </script>
+  </body>
+</html>
