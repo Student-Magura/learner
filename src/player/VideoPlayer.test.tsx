@@ -111,6 +111,22 @@ describe('VideoPlayer', () => {
     expect(onProgress).toHaveBeenCalledWith(33, 600);
   });
 
+  it('репортить позицію при демонтажі, навіть коли ref вже відв’язаний', () => {
+    // React відв'язує ref хостового вузла до того, як спрацює cleanup ефекту,
+    // тому cleanup не може покладатися на повторне читання ref.current.
+    const { video, view, onProgress } = setup();
+    const media = stubMedia(video, 600);
+    fireEvent(video, new Event('loadedmetadata'));
+    onProgress.mockClear();
+
+    media.seekTo(42);
+    // timeupdate навмисно не фаєримо: throttle ще не мав шансу відзвітувати.
+
+    view.unmount();
+
+    expect(onProgress).toHaveBeenCalledWith(42, 600);
+  });
+
   it('викликає onCompleted на 90% тривалості', () => {
     const { video, onCompleted } = setup();
     const media = stubMedia(video, 100);

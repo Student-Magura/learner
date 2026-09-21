@@ -42,9 +42,13 @@ export function VideoPlayer({
   const failedRef = useRef(false);
   const cancelRetryRef = useRef<(() => void) | null>(null);
 
-  const report = useCallback(
-    (force: boolean) => {
-      const video = ref.current;
+  // Окремо від `report`, бо cleanup ефекту на розмонтуванні не може покладатися
+  // на ref.current: React відв'язує ref хостового вузла в фазі мутації коміту,
+  // яка виконується ДО того, як спрацюють cleanup-функції passive-ефектів
+  // (useEffect). До того моменту ref.current вже null, тому cleanup мусить
+  // діяти на вузол, захоплений заздалегідь, а не перечитувати ref.
+  const reportVideo = useCallback(
+    (video: HTMLVideoElement | null, force: boolean) => {
       if (!video || !readyRef.current) return;
 
       const duration = video.duration;
@@ -64,6 +68,11 @@ export function VideoPlayer({
     [onCompleted, onProgress],
   );
 
+  const report = useCallback(
+    (force: boolean) => reportVideo(ref.current, force),
+    [reportVideo],
+  );
+
   const handleFailure = useCallback(() => {
     if (readyRef.current || failedRef.current) return;
 
@@ -77,6 +86,12 @@ export function VideoPlayer({
     }
 
     // Ще не контролюється — чекаємо на воркер і пробуємо ще раз, рівно один раз.
+    // Не оброблений навмисно компаунд-кейс: якщо ЦЕЙ виклик прийшов від
+    // METADATA_TIMEOUT_MS (а не від error) і сам ретрай зависне — ready ніколи
+    // не резолвиться, controllerchange не настає, а перезавантажений <video>
+    // сам по собі не кидає error, — жоден таймер це не переармує, і урок може
+    // чекати нескінченно. Малоймовірний випадок, другий таймаут навмисно не
+    // додається.
     retriedRef.current = true;
 
     if (!sw) {
@@ -124,7 +139,15 @@ export function VideoPlayer({
   }, [fileId, handleFailure]);
 
   // Новий урок — новий відлік: інакше стан попереднього відео протік би в наступне.
+  // Захист про всяк випадок: сьогодні Task 16 перемикає урок через key={videoId},
+  // тобто цей ефект з тим самим fileId не перезапускається без повного
+  // розмонтування (яке й так скасовує ретрай через cancelRetryRef вище) — але
+  // якби виклик колись почав відбуватись без remount, незавершений ретрай
+  // попереднього уроку міг би пройти скинуті прапорці й перезавантажити вже
+  // новий <video>. Скасовуємо його тут теж.
   useEffect(() => {
+    cancelRetryRef.current?.();
+    cancelRetryRef.current = null;
     readyRef.current = false;
     completedRef.current = false;
     lastReportRef.current = 0;
@@ -174,15 +197,20 @@ export function VideoPlayer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Закриття вкладки не має коштувати останніх хвилин перегляду.
+  // Закриття вкладки не має коштувати останніх хвилин перегляду — так само як і
+  // розмонтування (перехід на наступний урок). Вузол захоплюємо тут, у тілі
+  // ефекту, поки ref ще прив'язаний: на unmount cleanup спрацює вже після
+  // того, як React обнулить ref.current, тому flush() у cleanup діє саме на
+  // цей захоплений вузол, а не читає ref заново.
   useEffect(() => {
-    const flush = () => report(true);
+    const video = ref.current;
+    const flush = () => reportVideo(video, true);
     window.addEventListener('pagehide', flush);
     return () => {
       window.removeEventListener('pagehide', flush);
       flush();
     };
-  }, [report]);
+  }, [reportVideo]);
 
   return (
     <div className="flex flex-col gap-3">
