@@ -7,6 +7,7 @@ export const PROGRESS_FILE = 'learner-progress.json';
 export const SYNC_DEBOUNCE_MS = 10_000;
 
 const REMOTE_MODIFIED_KEY = 'remoteModifiedTime';
+const PUSHED_PROGRESS_KEY = 'pushedProgress';
 
 export type SyncEngine = {
   syncNow(): Promise<ProgressMap>;
@@ -74,10 +75,11 @@ export function createSyncEngine(
 
   async function run(): Promise<ProgressMap> {
     // Незалежні читання запускаємо паралельно.
-    const [local, stat, lastSeen] = await Promise.all([
+    const [local, stat, lastSeen, pushed] = await Promise.all([
       db.getProgress(),
       api.statAppData(PROGRESS_FILE),
       db.getMeta<string>(REMOTE_MODIFIED_KEY),
+      db.getMeta<ProgressMap>(PUSHED_PROGRESS_KEY),
     ]);
 
     // Файл не змінився з нашого останнього злиття — тягнути його немає сенсу.
@@ -95,10 +97,14 @@ export function createSyncEngine(
       await db.replaceProgress(merged);
     }
 
-    const mustPush = stat === null || (remoteChanged && !sameProgress(merged, remote));
+    // Пушимо, якщо те, що ми надіслали б, відрізняється від того, що ми надсилали
+    // востаннє — а не лише тоді, коли ІНШИЙ пристрій щось змінив: локальний прогрес
+    // теж міг просунутися відтоді.
+    const mustPush = stat === null || !sameProgress(merged, pushed ?? {});
     if (mustPush) {
       const { modifiedTime } = await api.writeAppData(PROGRESS_FILE, merged);
       await db.setMeta(REMOTE_MODIFIED_KEY, modifiedTime);
+      await db.setMeta(PUSHED_PROGRESS_KEY, merged);
     } else if (stat !== null) {
       await db.setMeta(REMOTE_MODIFIED_KEY, stat.modifiedTime);
     }

@@ -10,8 +10,23 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // fake-indexeddb schedules its callbacks via setImmediate; faking it too would
-    // make every IndexedDB operation hang under vi.useFakeTimers() (syncEngine.test.ts).
-    fakeTimers: { toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] },
+    // Vitest's default `toFake` list, minus `setImmediate`/`clearImmediate`: fake-indexeddb
+    // schedules its callbacks through those two, and faking them would hang any test that
+    // awaits an IndexedDB operation while timers are faked (syncEngine.test.ts).
+    fakeTimers: {
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'Date',
+        'queueMicrotask',
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+        'requestIdleCallback',
+        'cancelIdleCallback',
+        'performance',
+      ],
+    },
   },
 });

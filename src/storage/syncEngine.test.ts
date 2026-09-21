@@ -123,11 +123,32 @@ describe('syncNow', () => {
     await db.replaceProgress({ v1: rec(100, 10) });
     const engine = createSyncEngine(db, drive);
 
+    // Перший прохід може пушити (немає збереженого знімка), тому міряємо steady state
+    // від НЬОГО, а не від нуля: важливо, щоб третій прохід теж нічого не написав.
     await engine.syncNow();
     const afterFirst = drive.writes;
     await engine.syncNow();
+    await engine.syncNow();
 
     expect(drive.writes).toBe(afterFirst);
+  });
+
+  it('пушить локальну зміну навіть якщо віддалений файл уже існував і не змінювався', async () => {
+    // Регрес: push раніше залежав від remoteChanged (чи писав ІНШИЙ пристрій),
+    // тож локальний прогрес, який зʼявився після першого успішного push, ніколи
+    // не діставався до Drive, доки хтось інший не торкнеться файлу.
+    const drive = fakeDrive(null);
+    await db.putProgressRecord('v1', rec(100, 10));
+    const engine = createSyncEngine(db, drive);
+
+    await engine.syncNow();
+    expect(drive.writes).toBe(1);
+
+    await db.putProgressRecord('v2', rec(200, 20));
+    await engine.syncNow();
+
+    expect(drive.writes).toBe(2);
+    expect(drive.remote?.v2?.positionSec).toBe(20);
   });
 
   it('ігнорує зламані записи у віддаленому файлі, не втрачаючи решту', async () => {
