@@ -36,10 +36,21 @@ export function createLearnerStore(
   const now = deps.now ?? (() => Date.now());
 
   return create<LearnerState>((set, get) => {
-    /** Пише запис і локально, і в IndexedDB, і планує злиття у Drive. */
-    async function writeRecord(fileId: string, record: ProgressRecord): Promise<void> {
-      await db.putProgressRecord(fileId, record);
+    /**
+     * Пише запис і локально, і в IndexedDB, і планує злиття у Drive.
+     * Приймає будівник, а не готовий запис: злиття з попереднім станом відбувається
+     * в момент виклику, проти ПОТОЧНОГО get().progress, а не знімка, зробленого до await.
+     */
+    async function writeRecord(
+      fileId: string,
+      build: (previous: ProgressRecord | undefined) => ProgressRecord,
+    ): Promise<void> {
+      const record = build(get().progress[fileId]);
+      // Стан оновлюємо ДО await: інакше другий виклик у тому самому тіку прочитав би
+      // застарілий знімок і перезаписав би поле першого старим значенням. Плеєр
+      // викликає onProgress і onCompleted синхронно поруч, тому це не рідкісна гонка.
       set({ progress: { ...get().progress, [fileId]: record } });
+      await db.putProgressRecord(fileId, record);
       sync.scheduleSync();
     }
 
@@ -105,24 +116,22 @@ export function createLearnerStore(
       },
 
       async setPosition(fileId, positionSec, durationSec) {
-        const previous = get().progress[fileId];
-        await writeRecord(fileId, {
+        await writeRecord(fileId, (previous) => ({
           positionSec,
           // Тривалість, яку вже знаємо, не затираємо новим null.
           durationSec: durationSec ?? previous?.durationSec ?? null,
           completed: previous?.completed ?? false,
           updatedAt: now(),
-        });
+        }));
       },
 
       async setCompleted(fileId, completed) {
-        const previous = get().progress[fileId];
-        await writeRecord(fileId, {
+        await writeRecord(fileId, (previous) => ({
           positionSec: previous?.positionSec ?? 0,
           durationSec: previous?.durationSec ?? null,
           completed,
           updatedAt: now(),
-        });
+        }));
       },
     };
   });

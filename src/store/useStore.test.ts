@@ -205,4 +205,29 @@ describe('setCompleted', () => {
 
     expect(store.getState().progress.v1?.updatedAt).toBe(900);
   });
+
+  it('не втрачає позицію, коли setPosition і setCompleted викликані в один тік', async () => {
+    // Так робить плеєр: onProgress і onCompleted синхронно поруч при перетині порогу 90%.
+    const store = createLearnerStore({ db, api: fakeApi(), sync: fakeSync(), now: () => 1 });
+    await store.getState().init();
+    await store.getState().setPosition('v1', 80, 100);
+
+    const positionCall = store.getState().setPosition('v1', 90, 100);
+    const completedCall = store.getState().setCompleted('v1', true);
+    await Promise.all([positionCall, completedCall]);
+
+    expect(store.getState().progress.v1).toMatchObject({ positionSec: 90, completed: true });
+  });
+
+  it('не втрачає відмітку «переглянуто», коли виклики йдуть у зворотному порядку в один тік', async () => {
+    const store = createLearnerStore({ db, api: fakeApi(), sync: fakeSync(), now: () => 1 });
+    await store.getState().init();
+    await store.getState().setPosition('v1', 80, 100);
+
+    const completedCall = store.getState().setCompleted('v1', true);
+    const positionCall = store.getState().setPosition('v1', 90, 100);
+    await Promise.all([completedCall, positionCall]);
+
+    expect(store.getState().progress.v1).toMatchObject({ positionSec: 90, completed: true });
+  });
 });
