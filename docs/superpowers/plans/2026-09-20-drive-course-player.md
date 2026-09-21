@@ -73,11 +73,11 @@ learner/
 **Files:**
 - Create: `package.json`, `tsconfig.json`, `vite.config.ts`, `tailwind.config.js`, `postcss.config.js`, `index.html`, `.env.example`
 - Create: `src/main.tsx`, `src/App.tsx`, `src/index.css`, `src/types.ts`
-- Test: `src/types.test.ts`
+- Test: `src/test/smoke.test.tsx`
 
 **Interfaces:**
 - Consumes: нічого.
-- Produces: типи `TreeNode`, `FolderNode`, `VideoNode`, `Course`, `ProgressRecord`, `ProgressMap`; робочий `npm test` і `npm run dev`.
+- Produces: типи `TreeNode`, `FolderNode`, `VideoNode`, `Course`, `ProgressRecord`, `ProgressMap`, константа `COMPLETION_THRESHOLD`, функція `emptyProgress()`; робочий `npm test`, `npm run dev`, `npm run build`.
 
 - [ ] **Step 1: Створити проєкт і поставити залежності**
 
@@ -86,10 +86,24 @@ cd /Users/student/projects/Claude/learner
 npm init -y
 npm i react react-dom react-router-dom zustand idb
 npm i -D vite @vitejs/plugin-react typescript @types/react @types/react-dom \
-  tailwindcss postcss autoprefixer vitest jsdom @testing-library/react \
+  'tailwindcss@^3' postcss autoprefixer vitest jsdom @testing-library/react \
   @testing-library/user-event @testing-library/jest-dom msw fake-indexeddb \
   vite-plugin-pwa
 npx tailwindcss init -p
+```
+
+Tailwind закріплений на 3.x навмисно: у 4.x немає `init -p`, а підключення до PostCSS
+інше — план розрахований на 3.x.
+
+`npx tailwindcss init -p` генерує обидва конфіги у форматі CommonJS (`module.exports`),
+а `"type": "module"` у `package.json` робить це помилкою. Обидва файли треба перевести
+на `export default` — для `tailwind.config.js` вміст наведено нижче, а
+`postcss.config.js` має виглядати так:
+
+```js
+export default {
+  plugins: { tailwindcss: {}, autoprefixer: {} },
+};
 ```
 
 - [ ] **Step 2: Налаштувати конфіги**
@@ -132,7 +146,9 @@ npx tailwindcss init -p
 `vite.config.ts` — `allowedHosts: true` потрібен, щоб сторінку можна було відкрити через тунель із телефона (Задача 2):
 
 ```ts
-import { defineConfig } from 'vite';
+// defineConfig саме з 'vitest/config': варіант із 'vite' не знає про ключ `test`,
+// а tsconfig перевіряє цей файл, тому `npm run build` падав би на типах.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -219,44 +235,39 @@ createRoot(document.getElementById('root')!).render(
 import '@testing-library/jest-dom/vitest';
 ```
 
-- [ ] **Step 4: Написати падаючий тест на типи й константу**
+- [ ] **Step 4: Написати падаючий смоук-тест інструментарію**
 
-`src/types.test.ts`:
+Задача каркасна: поведінки, яку можна ганяти через TDD, тут ще немає. Тому тест
+перевіряє рівно те, що на цьому кроці справді може зламатися, — що працює сам
+інструментарій: раннер, jsdom і матчери `jest-dom`. Правильність типів перевіряє
+`tsc --noEmit` у Кроці 8, а не рантайм-тест.
 
-```ts
+`src/test/smoke.test.tsx`:
+
+```tsx
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { COMPLETION_THRESHOLD, emptyProgress } from './types';
-import type { Course, FolderNode } from './types';
+import App from '../App';
 
-describe('types', () => {
-  it('поріг завершення — 90%', () => {
-    expect(COMPLETION_THRESHOLD).toBe(0.9);
-  });
-
-  it('порожня мапа прогресу не має ключів', () => {
-    expect(Object.keys(emptyProgress())).toHaveLength(0);
-  });
-
-  it('курс складається з кореневої папки', () => {
-    const tree: FolderNode = { id: 'root', kind: 'folder', title: 'Курс', children: [] };
-    const course: Course = {
-      id: 'root',
-      title: 'Курс',
-      addedAt: 1,
-      tree,
-      lastScannedAt: 1,
-    };
-    expect(course.tree.kind).toBe('folder');
+describe('інструментарій', () => {
+  it('рендерить застосунок у jsdom і бачить його вміст', () => {
+    render(<App />);
+    expect(screen.getByText('Learner')).toBeInTheDocument();
   });
 });
 ```
 
 - [ ] **Step 5: Запустити тест і переконатися, що він падає**
 
-Run: `npm test -- src/types.test.ts`
-Expected: FAIL — `Failed to resolve import "./types"`.
+Run: `npm test`
+Expected: FAIL — `Failed to resolve import "../App"` (файл ще не створено на цьому кроці,
+якщо Крок 3 виконувався після Кроку 4; якщо `App.tsx` уже є — тест має пройти одразу,
+і це теж валідний результат: інструментарій робочий).
 
-- [ ] **Step 6: Реалізувати типи**
+- [ ] **Step 6: Створити типи**
+
+Типів у цій задачі не «досягають» тестом — вони потрібні всім наступним задачам як
+спільний словник, і їх правильність перевіряє компілятор.
 
 `src/types.ts`:
 
@@ -307,10 +318,10 @@ export function emptyProgress(): ProgressMap {
 }
 ```
 
-- [ ] **Step 7: Запустити тести і переконатися, що вони проходять**
+- [ ] **Step 7: Запустити тест і переконатися, що він проходить**
 
 Run: `npm test`
-Expected: PASS, 3 тести.
+Expected: PASS, 1 тест.
 
 - [ ] **Step 8: Переконатися, що застосунок і типізація живі**
 
@@ -3117,7 +3128,7 @@ async function proxyMedia(request: Request, fileId: string): Promise<Response> {
 Замінити вміст `vite.config.ts`:
 
 ```ts
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -4793,7 +4804,13 @@ export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
             ) : (
               <TreeSection
                 key={child.id}
-                node={{ id: child.id, kind: 'folder', title: 'Без розділу', children: [child] }}
+                node={{
+                  // Префікс, щоб синтетична папка не мала того самого id, що й відео в ній.
+                  id: `section-${child.id}`,
+                  kind: 'folder',
+                  title: 'Без розділу',
+                  children: [child],
+                }}
                 courseId={course.id}
                 progress={progress}
               />
@@ -5154,10 +5171,11 @@ export default function App() {
 function SignedInApp({ store }: { store: Store }) {
   const state = store();
 
+  // init читає сховище й зливає прогрес — рівно один раз за монтування.
+  // Порожній список залежностей тут навмисний: state змінюється на кожну дію,
+  // і будь-яка залежність від нього перезапускала б init без кінця.
   useEffect(() => {
     void state.init();
-    // init читає сховище й зливає прогрес; повторювати на кожен рендер не можна.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!state.ready) {
