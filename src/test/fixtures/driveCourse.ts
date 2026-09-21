@@ -18,7 +18,7 @@ export const ROOT_ID = 'root-course-fixture-000000000';
 
 /**
  * Зліплено зі структури реального курсу: модулі з номерами, вкладені підрозділи,
- * mp4 у листках і .DS_Store у двох папках.
+ * mp4 у листках і .DS_Store у чотирьох папках.
  */
 export const COURSE_LISTING: Record<string, DriveFile[]> = {
   [ROOT_ID]: [

@@ -34,6 +34,11 @@ function LessonLink({
       >
         {completed ? '✓' : started ? '◐' : '○'}
       </span>
+      {/* Гліф суто декоративний, тому стан уроку дублюємо текстом: інакше
+          читач екрана чує лише назву, без «переглянуто» чи «розпочато». */}
+      <span className="sr-only">
+        {completed ? 'Переглянуто: ' : started ? 'Розпочато: ' : 'Не розпочато: '}
+      </span>
       <span className={completed ? 'text-zinc-500' : ''}>{node.title}</span>
     </Link>
   );

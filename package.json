@@ -1,8 +1,7 @@
 {
   "name": "drive-course-player",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "PWA, що перетворює папку Google Drive на відеокурс із відстеженням прогресу — без бекенду.",
   "directories": {
     "doc": "docs"
   },
@@ -13,9 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "dependencies": {
     "idb": "^8.0.3",
