@@ -2080,12 +2080,18 @@ export const ROOT_ID = 'root-course';
 
 /**
  * Зліплено зі структури реального курсу: модулі з номерами, вкладені підрозділи,
- * mp4 у листках і .DS_Store у двох папках.
+ * mp4 у листках і .DS_Store у чотирьох папках.
+ *
+ * `m03` існує спеціально для тесту обрізання: він порожній на два рівні вглиб,
+ * тому мусить зникнути цілком. `m02` навмисно НЕ порожній — інакше тест на
+ * сортування модулів лишився б з одноелементним масивом і перестав би
+ * перевіряти сортування взагалі.
  */
 export const COURSE_LISTING: Record<string, DriveFile[]> = {
   [ROOT_ID]: [
     folder('m02', '02 - Feature Design'),
     folder('m01', '01 - Feature Opportunity Validation'),
+    folder('m03', '03 - Порожній модуль'),
     junk('junk-root', '.DS_Store'),
   ],
   m01: [
@@ -2100,8 +2106,10 @@ export const COURSE_LISTING: Record<string, DriveFile[]> = {
   m01s02: [video('v-comm', 'Communicating Opportunities.mp4', 300), junk('junk-s02', '.DS_Store')],
   m01s10: [video('v-late', 'Пізнє відео.mp4', null)],
   m02: [folder('m02s01', '1 - Constrained Divergence')],
-  // Порожня після фільтрації: лишається тільки смітник.
-  m02s01: [junk('junk-m02s01', '.DS_Store')],
+  m02s01: [video('v-diverge', 'Constrained Divergence.mp4', 480), junk('junk-m02s01', '.DS_Store')],
+  m03: [folder('m03s01', '1 - Тільки смітник')],
+  // Порожня після фільтрації на два рівні вглиб: модуль має зникнути цілком.
+  m03s01: [junk('junk-m03s01', '.DS_Store')],
 };
 
 export const ROOT_FILE: DriveFile = folder(ROOT_ID, 'Product Management Course');
@@ -2173,8 +2181,9 @@ describe('scanCourse', () => {
 
   it('прибирає папки, що стали порожніми після фільтрації', async () => {
     const course = await scanCourse(fakeApi(), ROOT_ID);
-    // 02 - Feature Design містить лише підпапку з одним .DS_Store, тому зникає цілком.
-    expect(titles(course.tree)).not.toContain('02 - Feature Design');
+    // 03 містить лише підпапку з одним .DS_Store, тому зникає цілком —
+    // разом із підпапкою, а не лишається порожнім розділом.
+    expect(titles(course.tree)).not.toContain('03 - Порожній модуль');
   });
 
   it('переносить тривалість відео у дерево', async () => {
