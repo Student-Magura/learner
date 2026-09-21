@@ -17,6 +17,12 @@ export type VideoPlayerProps = {
   onCompleted(): void;
   onEnded(): void;
   onUnsupported(): void;
+  /**
+   * Поновлює токен і пересилає його воркеру. Копія токена у воркері
+   * протермінюється сама собою, якщо вкладка довго простояла без запитів до
+   * Drive, і тоді проксі відповідає 401 — це не вердикт про платформу.
+   */
+  onRecoverToken?(): Promise<void>;
 };
 
 export function VideoPlayer({
@@ -26,6 +32,7 @@ export function VideoPlayer({
   onCompleted,
   onEnded,
   onUnsupported,
+  onRecoverToken,
 }: VideoPlayerProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const lastReportRef = useRef(0);
@@ -80,6 +87,37 @@ export function VideoPlayer({
     const controlled = sw?.controller != null;
 
     if (controlled || retriedRef.current) {
+      // Сторінка вже під контролем воркера, тобто проксі дійсно відповів
+      // помилкою. Найчастіша тимчасова причина — протермінований токен у
+      // воркері, тому спершу пробуємо його поновити й перезавантажити відео
+      // рівно один раз. Вердикт «платформа непридатна» ставимо лише коли й це
+      // не допомогло: інакше одна мережева невдача назавжди зсилала капабельний
+      // браузер на плеєр Drive із ручними відмітками.
+      if (controlled && !retriedRef.current && onRecoverToken) {
+        retriedRef.current = true;
+
+        let cancelled = false;
+        cancelRetryRef.current = () => {
+          cancelled = true;
+        };
+
+        void onRecoverToken()
+          .then(() => {
+            cancelRetryRef.current = null;
+            if (cancelled || readyRef.current || failedRef.current) return;
+            ref.current?.load();
+          })
+          .catch(() => {
+            cancelRetryRef.current = null;
+            // Поновити токен не вдалося — потрібен вхід; далі вирішує
+            // застосунок, а урок не лишаємо без вердикту.
+            if (cancelled || readyRef.current || failedRef.current) return;
+            failedRef.current = true;
+            onUnsupported();
+          });
+        return;
+      }
+
       failedRef.current = true;
       onUnsupported();
       return;
@@ -119,7 +157,7 @@ export function VideoPlayer({
       sw.removeEventListener('controllerchange', retry);
     };
     void sw.ready.then(retry);
-  }, [onUnsupported]);
+  }, [onRecoverToken, onUnsupported]);
 
   // Якщо компонент розмонтувався до того, як воркер відповів — не лишаємо
   // слухача controllerchange висіти на глобальному об'єкті назавжди.

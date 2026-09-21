@@ -11,6 +11,8 @@ export type LessonPageProps = {
   videoId: string;
   onPosition(fileId: string, positionSec: number, durationSec: number | null): void;
   onToggleCompleted(fileId: string, completed: boolean): void;
+  /** Поновлення токена перед тим, як плеєр визнає проксі непридатним. */
+  onRecoverToken?(): Promise<void>;
 };
 
 export function LessonPage({
@@ -19,8 +21,9 @@ export function LessonPage({
   videoId,
   onPosition,
   onToggleCompleted,
+  onRecoverToken,
 }: LessonPageProps) {
-  const { capability, markProxyUnsupported } = useMediaCapability();
+  const { capability, markProxyUnsupported, retryProxy } = useMediaCapability();
 
   const videos = flattenVideos(course.tree);
   const index = videos.findIndex((v) => v.id === videoId);
@@ -64,6 +67,7 @@ export function LessonPage({
             onCompleted={() => onToggleCompleted(videoId, true)}
             onEnded={() => {}}
             onUnsupported={markProxyUnsupported}
+            onRecoverToken={onRecoverToken}
           />
           <label className="flex items-center gap-2 text-sm font-medium">
             <input
@@ -81,6 +85,7 @@ export function LessonPage({
           fileId={videoId}
           completed={completed}
           onToggleCompleted={() => onToggleCompleted(videoId, !completed)}
+          onRetryProxy={retryProxy}
         />
       )}
 

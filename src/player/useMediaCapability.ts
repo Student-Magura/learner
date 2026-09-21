@@ -33,6 +33,7 @@ function readStored(): string | null {
 export function useMediaCapability(): {
   capability: MediaCapability;
   markProxyUnsupported(): void;
+  retryProxy(): void;
 } {
   const [capability, setCapability] = useState<MediaCapability>(() =>
     detectInitialCapability('serviceWorker' in navigator, readStored()),
@@ -47,5 +48,19 @@ export function useMediaCapability(): {
     }
   }, []);
 
-  return { capability, markProxyUnsupported };
+  /**
+   * Вердикт міг зʼявитися через тимчасову причину — офлайн, 5xx від Drive,
+   * протермінований токен у воркері. Без цього виходу капабельний браузер
+   * лишався б на ручних відмітках назавжди: вердикт не чистив ніхто.
+   */
+  const retryProxy = useCallback(() => {
+    try {
+      localStorage.removeItem(CAPABILITY_STORAGE_KEY);
+    } catch {
+      // Немає сховища — немає і збереженого вердикту, скидати нічого.
+    }
+    setCapability(detectInitialCapability('serviceWorker' in navigator, null));
+  }, []);
+
+  return { capability, markProxyUnsupported, retryProxy };
 }

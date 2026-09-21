@@ -45,6 +45,19 @@ describe('useMediaCapability', () => {
     expect(localStorage.getItem(CAPABILITY_STORAGE_KEY)).toBe('fallback');
   });
 
+  it('retryProxy прибирає збережений вердикт і повертає proxy', () => {
+    // Без цього виходу тимчасова причина (офлайн, 401, 5xx) назавжди зсилала
+    // капабельний браузер на плеєр Drive: вердикт не чистив ніхто.
+    localStorage.setItem(CAPABILITY_STORAGE_KEY, 'fallback');
+    const { result } = renderHook(() => useMediaCapability());
+    expect(result.current.capability).toBe('fallback');
+
+    act(() => result.current.retryProxy());
+
+    expect(result.current.capability).toBe('proxy');
+    expect(localStorage.getItem(CAPABILITY_STORAGE_KEY)).toBeNull();
+  });
+
   it('після перезапуску не пробує proxy знову', () => {
     localStorage.setItem(CAPABILITY_STORAGE_KEY, 'fallback');
     const { result } = renderHook(() => useMediaCapability());

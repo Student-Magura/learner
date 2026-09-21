@@ -265,6 +265,87 @@ describe('VideoPlayer', () => {
       restore();
     });
 
+    it('на контрольованій сторінці спершу поновлює токен і перезавантажує відео', async () => {
+      // Регрес: будь-який провал на контрольованій сторінці вважався вердиктом
+      // про платформу, тому протермінований у воркері токен (годину простою)
+      // назавжди зсилав капабельний Chrome на плеєр Drive із ручними відмітками.
+      const restore = stubServiceWorker({ controller: {} as ServiceWorker });
+      const onRecoverToken = vi.fn(async () => {});
+      const { video, onUnsupported } = setup({ onRecoverToken });
+      const loadSpy = vi.fn();
+      video.load = loadSpy;
+
+      fireEvent(video, new Event('error'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(onRecoverToken).toHaveBeenCalledTimes(1);
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+      expect(onUnsupported).not.toHaveBeenCalled();
+      restore();
+    });
+
+    it('визнає платформу непридатною, якщо й після поновлення токена відео не пішло', async () => {
+      const restore = stubServiceWorker({ controller: {} as ServiceWorker });
+      const onRecoverToken = vi.fn(async () => {});
+      const { video, onUnsupported } = setup({ onRecoverToken });
+      video.load = vi.fn();
+
+      fireEvent(video, new Event('error'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(onUnsupported).not.toHaveBeenCalled();
+
+      // Бюджет повторів — рівно один, тому справді зламаний проксі доходить
+      // до відкоту без зайвих пауз.
+      fireEvent(video, new Event('error'));
+      expect(onUnsupported).toHaveBeenCalledTimes(1);
+      expect(onRecoverToken).toHaveBeenCalledTimes(1);
+      restore();
+    });
+
+    it('визнає платформу непридатною, якщо поновлення токена впало', async () => {
+      const restore = stubServiceWorker({ controller: {} as ServiceWorker });
+      const onRecoverToken = vi.fn(async () => {
+        throw new Error('потрібен повторний вхід');
+      });
+      const { video, onUnsupported } = setup({ onRecoverToken });
+      video.load = vi.fn();
+
+      fireEvent(video, new Event('error'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(onUnsupported).toHaveBeenCalledTimes(1);
+      restore();
+    });
+
+    it('не ставить вердикт, якщо урок закрили поки поновлювався токен', async () => {
+      const restore = stubServiceWorker({ controller: {} as ServiceWorker });
+      let release: () => void = () => {};
+      const onRecoverToken = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      );
+      const { video, view, onUnsupported } = setup({ onRecoverToken });
+      video.load = vi.fn();
+
+      fireEvent(video, new Event('error'));
+      view.unmount();
+      release();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(onUnsupported).not.toHaveBeenCalled();
+      restore();
+    });
+
     it('викликає onUnsupported, якщо повторна спроба після готовності воркера теж провалюється', async () => {
       let readyResolve: (reg: unknown) => void = () => {};
       const ready = new Promise((resolve) => {
