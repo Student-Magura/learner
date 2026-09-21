@@ -6,6 +6,38 @@ export const DRIVE_SCOPES = [
 /** Запас перед закінченням токена, щоб не віддати той, що помре в дорозі. */
 const EXPIRY_MARGIN_MS = 60_000;
 
+/** Скільки чекаємо на скрипт GIS, перш ніж здатися з людською помилкою. */
+export const GIS_LOAD_TIMEOUT_MS = 15_000;
+
+/** Скрипт GIS підключений з `async`, тому на холодному кеші його ще може не бути. */
+export function isGisLoaded(): boolean {
+  const g = globalThis as unknown as { google?: { accounts?: { oauth2?: unknown } } };
+  return g.google?.accounts?.oauth2 !== undefined;
+}
+
+/**
+ * Чекає, поки GIS зʼявиться в global. Опитування, а не подія `load` на теґу:
+ * скрипт міг завантажитися між перевіркою і підпискою, і тоді подія вже не
+ * настане — а тут кожна ітерація перечитує реальний стан.
+ */
+export async function waitForGis(
+  timeoutMs = GIS_LOAD_TIMEOUT_MS,
+  pollMs = 100,
+): Promise<void> {
+  if (isGisLoaded()) return;
+
+  const deadline = Date.now() + timeoutMs;
+  while (!isGisLoaded()) {
+    if (Date.now() >= deadline) {
+      throw new Error(
+        'Не вдалося завантажити Google Sign-In (accounts.google.com). ' +
+          'Перевірте зʼєднання або блокувальник скриптів і перезавантажте сторінку.',
+      );
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 export class AuthRequiredError extends Error {
   constructor(message = 'Потрібен повторний вхід у Google') {
     super(message);

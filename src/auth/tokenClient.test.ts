@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthRequiredError, createTokenClient } from './tokenClient';
+import { AuthRequiredError, createTokenClient, isGisLoaded, waitForGis } from './tokenClient';
 
 type Handler = (resp: { access_token?: string; expires_in?: number; error?: string }) => void;
 
@@ -25,6 +25,35 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   delete (globalThis as any).google;
+});
+
+describe('waitForGis', () => {
+  it('одразу проходить, коли скрипт уже виконався', async () => {
+    expect(isGisLoaded()).toBe(true);
+    await expect(waitForGis(1_000)).resolves.toBeUndefined();
+  });
+
+  it('чекає на скрипт, що приїхав із запізненням', async () => {
+    const google = (globalThis as any).google;
+    delete (globalThis as any).google;
+    expect(isGisLoaded()).toBe(false);
+
+    const waiting = waitForGis(5_000, 50);
+    await vi.advanceTimersByTimeAsync(200);
+    (globalThis as any).google = google;
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(waiting).resolves.toBeUndefined();
+  });
+
+  it('після таймауту дає людський текст, а не сирий TypeError', async () => {
+    delete (globalThis as any).google;
+
+    const waiting = waitForGis(1_000, 50);
+    const assertion = expect(waiting).rejects.toThrow(/Google Sign-In/);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await assertion;
+  });
 });
 
 describe('tokenClient', () => {

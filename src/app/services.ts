@@ -1,25 +1,45 @@
-import { createTokenClient } from '../auth/tokenClient';
+import { createTokenClient, waitForGis } from '../auth/tokenClient';
 import { createDriveApi } from '../drive/api';
 import { openLearnerDb } from '../storage/db';
 import { createSyncEngine } from '../storage/syncEngine';
 import { publishTokenToServiceWorker } from '../sw/publishToken';
 import type { TokenClient } from '../auth/tokenClient';
+import type { GetToken } from '../drive/api';
 import type { StoreDeps } from '../store/useStore';
 
-export async function createServices(): Promise<StoreDeps & { tokenClient: TokenClient }> {
+export type Services = StoreDeps & {
+  tokenClient: TokenClient;
+  refreshToken: () => Promise<void>;
+};
+
+export async function createServices(): Promise<Services> {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
   if (!clientId) {
     throw new Error('Не задано VITE_GOOGLE_CLIENT_ID — див. docs/google-cloud-setup.md');
   }
 
+  // Скрипт GIS у index.html завантажується async, тому createTokenClient міг
+  // застати global `google` ще відсутнім і впасти сирим TypeError.
+  await waitForGis();
+
   const tokenClient = createTokenClient(clientId);
 
   // Воркер не має доступу до GIS, тому щоразу, коли токен проходить через нас,
   // пересилаємо його — і при першому вході, і при кожному тихому поновленні.
-  const getToken = async () => {
-    const token = await tokenClient.getToken();
+  // opts обов'язково прокидуються далі: без них { force: true } після 401 від
+  // Drive не доходило б до tokenClient, і той віддавав би той самий токен, який
+  // щойно відкинули.
+  const getToken: GetToken = async (opts) => {
+    const token = await tokenClient.getToken(opts);
     publishTokenToServiceWorker(token);
     return token;
+  };
+
+  // Копія токена у воркері поновлюється лише як побічний ефект запиту до Drive
+  // API, тому за годину простою вона протермінується, і плеєр отримає 401.
+  // Плеєр викликає це перед тим, як визнати платформу непридатною.
+  const refreshToken = async (): Promise<void> => {
+    await getToken({ force: true });
   };
 
   // publishTokenToServiceWorker no-оп'иться, поки navigator.serviceWorker.controller
@@ -43,5 +63,5 @@ export async function createServices(): Promise<StoreDeps & { tokenClient: Token
   const api = createDriveApi(getToken);
   const sync = createSyncEngine(db, api);
 
-  return { db, api, sync, tokenClient };
+  return { db, api, sync, tokenClient, refreshToken };
 }

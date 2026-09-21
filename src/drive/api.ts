@@ -24,6 +24,13 @@ export type DriveFile = {
 
 export type AppDataPayload = { content: unknown; modifiedTime: string };
 
+/**
+ * Названий тип, а не інлайнова сигнатура: без нього нуль-арний лямбда-геттер
+ * тихо підходить під ширшу сигнатуру, і { force: true } після 401 губиться
+ * без жодної помилки компіляції.
+ */
+export type GetToken = (opts?: { force?: boolean }) => Promise<string>;
+
 export type DriveApi = {
   listFolder(folderId: string): Promise<DriveFile[]>;
   getFile(fileId: string): Promise<DriveFile>;
@@ -66,7 +73,7 @@ function toDriveFile(raw: RawFile): DriveFile {
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function createDriveApi(
-  getToken: (opts?: { force?: boolean }) => Promise<string>,
+  getToken: GetToken,
   options: { sleep?: (ms: number) => Promise<void>; maxRetries?: number } = {},
 ): DriveApi {
   const sleep = options.sleep ?? defaultSleep;
