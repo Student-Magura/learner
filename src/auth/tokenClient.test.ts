@@ -154,4 +154,32 @@ describe('tokenClient', () => {
     callback({ access_token: 'tok-2', expires_in: 3600 });
     await expect(forced).resolves.toBe('tok-2');
   });
+
+  it('signIn під час активного тихого запиту все одно доходить до діалогу згоди', async () => {
+    const client = createTokenClient('cid');
+
+    // Тихий getToken() уже в польоті (наприклад, фонове поновлення на
+    // завантаженні сторінки).
+    const silent = client.getToken();
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+    expect(requestAccessToken).toHaveBeenCalledWith({ prompt: '' });
+
+    // Користувач тим часом тисне «увійти».
+    const signInPromise = client.signIn();
+    // signIn не повинен коалесцуватись у тихий запит і не робить власний
+    // виклик, доки той не завершиться.
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+
+    // Тихий запит падає саме так, як і очікується, коли потрібна згода.
+    callback({ error: 'interaction_required' });
+    await expect(silent).rejects.toBeInstanceOf(AuthRequiredError);
+
+    // Одразу після цього для signIn мусить стартувати окремий, справжній
+    // інтерактивний запит — а не мовчазне відхилення тим самим провалом.
+    expect(requestAccessToken).toHaveBeenCalledTimes(2);
+    expect(requestAccessToken).toHaveBeenLastCalledWith({ prompt: 'consent' });
+
+    callback({ access_token: 'tok-consent', expires_in: 3600 });
+    await expect(signInPromise).resolves.toBe('tok-consent');
+  });
 });

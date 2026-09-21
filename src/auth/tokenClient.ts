@@ -37,8 +37,10 @@ export function createTokenClient(clientId: string): TokenClient {
   let pending: { waiters: Waiter[] } | null = null;
   // Черга waiter-ів, яким недостатньо результату запиту з `pending` (див.
   // request нижче) — для них одразу після завершення поточного запускається
-  // ще один, спільний для всіх, хто встиг доєднатися.
-  let queuedNext: { waiters: Waiter[] } | null = null;
+  // ще один, спільний для всіх, хто встиг доєднатися. `prompt` — який запит
+  // цей наступний виклик зробить: 'consent', якщо серед черги є хоч один
+  // інтерактивний запит (signIn), інакше '' (тихе force-поновлення).
+  let queuedNext: { prompt: string; waiters: Waiter[] } | null = null;
   const listeners = new Set<(signedIn: boolean) => void>();
 
   const gis: GisClient = (
@@ -78,7 +80,7 @@ export function createTokenClient(clientId: string): TokenClient {
         notify(true);
         for (const waiter of waiters) waiter.resolve(token);
       }
-      if (next) startRequest('', next.waiters);
+      if (next) startRequest(next.prompt, next.waiters);
     },
   });
 
@@ -104,14 +106,25 @@ export function createTokenClient(clientId: string): TokenClient {
         pending.waiters.push(waiter);
         return;
       }
-      // requireFreshStart (force): викликач не може задовольнитися токеном із
-      // запиту, що вже летить, — той міг стартувати до цього виклику
-      // (наприклад, фонове тихе поновлення) і повернути саме той токен, який
-      // щойно отримав 401 від Drive. Черга запускає свіжий запит одразу
-      // після завершення поточного; усі, хто прийшов з force, поки той
-      // запит летить, розділяють один спільний наступний запит.
-      if (!queuedNext) queuedNext = { waiters: [] };
-      queuedNext.waiters.push(waiter);
+      // requireFreshStart (force або signIn): викликач не може задовольнитися
+      // токеном із запиту, що вже летить, — той міг стартувати до цього
+      // виклику (наприклад, фонове тихе поновлення) і повернути саме той
+      // токен, який щойно отримав 401 від Drive, або взагалі не показати
+      // діалог згоди, якого чекає signIn(). Черга запускає свіжий запит
+      // одразу після завершення поточного; усі, хто прийшов з
+      // requireFreshStart, поки той запит летить, розділяють один спільний
+      // наступний запит.
+      if (!queuedNext) {
+        queuedNext = { prompt, waiters: [waiter] };
+      } else {
+        queuedNext.waiters.push(waiter);
+        // 'consent' не можна загубити: якщо інтерактивний виклик доєднався
+        // до черги, весь спільний наступний запит має лишитися
+        // інтерактивним — навіть якщо тихий force-виклик доєднався раніше
+        // й вихідно встановив тут ''. Зворотного пониження нема: 'consent',
+        // раз потрапивши в чергу, звідти вже не зникає.
+        if (prompt === 'consent') queuedNext.prompt = 'consent';
+      }
     });
   }
 
@@ -120,7 +133,12 @@ export function createTokenClient(clientId: string): TokenClient {
   }
 
   return {
-    signIn: () => request('consent'),
+    // requireFreshStart: true — signIn() завжди мусить дійти до реального
+    // діалогу згоди. Якщо просто приєднатися до силентного запиту, що вже
+    // летить, і той впаде з interaction_required (а це якраз типовий
+    // випадок, коли згода і потрібна), клік користувача мовчки відхилиться
+    // й вікно згоди так і не покажеться.
+    signIn: () => request('consent', true),
     getToken: async ({ force = false } = {}) => {
       // force потрібен, коли Drive відповів 401 на токен, що за годинником ще свіжий.
       if (!force && isFresh()) return token!;
