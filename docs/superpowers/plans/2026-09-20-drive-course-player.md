@@ -4416,8 +4416,12 @@ export type ProgressBarProps = {
 
 export function ProgressBar({ ratio, approximate = false }: ProgressBarProps) {
   const clamped = Math.min(1, Math.max(0, ratio));
-  // Округлення вниз: 99,6% не має виглядати як завершений курс.
-  const percent = Math.floor(clamped * 100);
+  // Звичайне округлення, АЛЕ 100% лише для справді завершеного курсу.
+  // Один спосіб округлення не задовольняє обидва вимоги: floor показав би 45% там,
+  // де очікується 46%, а round показав би 100% для 99,6%. Тому округлюємо звично
+  // й окремо забороняємо 100%, поки ratio < 1 — саме це й було справжнім правилом.
+  const rounded = Math.round(clamped * 100);
+  const percent = rounded >= 100 && clamped < 1 ? 99 : rounded;
 
   return (
     <div className="flex items-center gap-2">
