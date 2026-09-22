@@ -10,7 +10,11 @@ import {
 
 describe('mediaUrl', () => {
   it('будує маршрут на власному origin', () => {
-    expect(mediaUrl('abc123')).toBe('/media/abc123');
+    expect(mediaUrl('abc123')).toBe(`${import.meta.env.BASE_URL}media/abc123`);
+  });
+
+  it('лишається всередині scope воркера (BASE_URL) — інакше воркер не перехопить запит', () => {
+    expect(mediaUrl('abc123').startsWith(import.meta.env.BASE_URL)).toBe(true);
   });
 });
 

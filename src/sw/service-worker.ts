@@ -8,7 +8,13 @@ declare const self: ServiceWorkerGlobalScope & {
 // Оболонка застосунку кешується, тому бібліотека курсів відкривається офлайн.
 precacheAndRoute(self.__WB_MANIFEST);
 
-const MEDIA_PREFIX = '/media/';
+// Виводимо префікс з власного розташування воркера, а не з літералу: воркер
+// живе за адресою свого scope (наприклад /learner/service-worker.js під
+// проєктним піддомовим шляхом), тож і медіа-маршрут мусить лежати всередині
+// цього ж scope. Це має погоджуватись з mediaUrl() у
+// src/player/useMediaCapability.ts — інакше запит піде повз воркер і мовчки
+// провалиться 404-кою від статичного сервера.
+const MEDIA_PREFIX = new URL('media/', self.location.href).pathname;
 
 /** Заголовки, без яких медіа-елемент не вміє ні тривалість, ні перемотку. */
 const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'content-range', 'etag'];

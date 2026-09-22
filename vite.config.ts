@@ -4,7 +4,11 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// GitHub Pages project site: served at https://<account>.github.io/learner/.
+const BASE = '/learner/';
+
 export default defineConfig({
+  base: BASE,
   plugins: [
     react(),
     VitePWA({
@@ -19,7 +23,8 @@ export default defineConfig({
         short_name: 'Learner',
         description: 'Відеокурси з Google Drive із відстеженням прогресу',
         lang: 'uk',
-        start_url: '/',
+        start_url: BASE,
+        scope: BASE,
         display: 'standalone',
         background_color: '#0b0b0f',
         theme_color: '#0b0b0f',

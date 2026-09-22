@@ -55,7 +55,7 @@ afterEach(() => vi.useRealTimers());
 describe('VideoPlayer', () => {
   it('тягне відео через маршрут медіа-проксі', () => {
     const { video } = setup();
-    expect(video.getAttribute('src')).toBe('/media/file-1');
+    expect(video.getAttribute('src')).toBe(`${import.meta.env.BASE_URL}media/file-1`);
   });
 
   it('відновлює позицію після loadedmetadata', () => {

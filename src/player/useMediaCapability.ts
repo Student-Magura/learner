@@ -4,9 +4,16 @@ export const CAPABILITY_STORAGE_KEY = 'learner.mediaCapability';
 
 export type MediaCapability = 'proxy' | 'fallback';
 
-/** Маршрут, який перехоплює Service Worker і проксує в Drive. */
+/**
+ * Маршрут, який перехоплює Service Worker і проксує в Drive.
+ *
+ * Мусить лежати всередині scope воркера (BASE_URL), інакше запит піде повз
+ * нього напряму на статичний сервер і мовчки провалиться 404-кою. Ця
+ * функція і MEDIA_PREFIX у src/sw/service-worker.ts мусять погоджуватись —
+ * обидві виводять префікс з базового шляху застосунку, а не з літералу.
+ */
 export function mediaUrl(fileId: string): string {
-  return `/media/${fileId}`;
+  return `${import.meta.env.BASE_URL}media/${fileId}`;
 }
 
 export function detectInitialCapability(
