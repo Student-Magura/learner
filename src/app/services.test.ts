@@ -9,6 +9,7 @@ let requestAccessToken: ReturnType<typeof vi.fn>;
 let issued: number;
 let postMessage: ReturnType<typeof vi.fn>;
 let controllerListeners: Array<() => void>;
+let messageListeners: Array<(event: MessageEvent) => void>;
 let restoreServiceWorker: () => void;
 
 /** GIS підміняємо так само, як у tokenClient.test.ts, але відповідаємо автоматично. */
@@ -36,12 +37,14 @@ function stubServiceWorker() {
   const original = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
   postMessage = vi.fn();
   controllerListeners = [];
+  messageListeners = [];
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
     value: {
       controller: { postMessage },
       addEventListener: (type: string, listener: () => void) => {
         if (type === 'controllerchange') controllerListeners.push(listener);
+        if (type === 'message') messageListeners.push(listener);
       },
     },
   });
@@ -107,15 +110,32 @@ describe('createServices', () => {
     );
   });
 
-  it('refreshToken бере новий токен і пересилає його воркеру', async () => {
+  it('refreshToken перепубліковує кешований токен, не відкриваючи вікна Google', async () => {
+    // Регрес: refreshToken робив getToken({ force: true }), і плеєр після 401
+    // від воркера, який просто забув свою копію, відкривав вікно входу Google,
+    // хоча токен сторінки був чинний.
     const { refreshToken } = await createServices();
     await refreshToken();
     expect(requestAccessToken).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenLastCalledWith({ type: 'SET_TOKEN', token: 'tok-1' });
 
+    postMessage.mockClear();
     await refreshToken();
-    // force не задовольняється кешем — це і є сенс виклику.
-    expect(requestAccessToken).toHaveBeenCalledTimes(2);
-    expect(postMessage).toHaveBeenLastCalledWith({ type: 'SET_TOKEN', token: 'tok-2' });
+    // Кешований токен ще чинний — другого запиту до GIS немає, але воркер
+    // отримує копію знову.
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'SET_TOKEN', token: 'tok-1' });
+  });
+
+  it('відповідає на GET_TOKEN від воркера кешованим токеном', async () => {
+    const { tokenClient } = await createServices();
+    await tokenClient.getToken();
+
+    expect(messageListeners).toHaveLength(1);
+    const port = { postMessage: vi.fn() };
+    messageListeners[0]!({ data: { type: 'GET_TOKEN' }, ports: [port] } as unknown as MessageEvent);
+
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledWith({ token: 'tok-1' }));
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,6 +2,7 @@ import { createTokenClient, waitForGis } from '../auth/tokenClient';
 import { createDriveApi } from '../drive/api';
 import { openLearnerDb } from '../storage/db';
 import { createSyncEngine } from '../storage/syncEngine';
+import { answerTokenRequests } from '../sw/answerTokenRequests';
 import { publishTokenToServiceWorker } from '../sw/publishToken';
 import type { TokenClient } from '../auth/tokenClient';
 import type { GetToken } from '../drive/api';
@@ -35,11 +36,12 @@ export async function createServices(): Promise<Services> {
     return token;
   };
 
-  // Копія токена у воркері поновлюється лише як побічний ефект запиту до Drive
-  // API, тому за годину простою вона протермінується, і плеєр отримає 401.
-  // Плеєр викликає це перед тим, як визнати платформу непридатною.
+  // Плеєр викликає це перед тим, як визнати платформу непридатною. Без force:
+  // токен сторінки зазвичай чинний — це воркер забув свою копію, бо браузер
+  // його перезапустив. force відкривав би вікно Google без потреби. Протерміновані
+  // токени воркер поновлює сам (GET_TOKEN з force після 401 від Drive).
   const refreshToken = async (): Promise<void> => {
-    await getToken({ force: true });
+    await getToken();
   };
 
   // publishTokenToServiceWorker no-оп'иться, поки navigator.serviceWorker.controller
@@ -48,6 +50,8 @@ export async function createServices(): Promise<Services> {
   // вже отриманий токен щойно контроль перейде до воркера — без цього перше
   // відео могло б лишитися без токена, поки не спрацює ретрай у плеєрі.
   if ('serviceWorker' in navigator) {
+    // Воркер, якого браузер перезапустив, питає токен сам — див. tokenSource.
+    answerTokenRequests(navigator.serviceWorker, (opts) => tokenClient.getToken(opts));
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       void tokenClient
         .getToken()
