@@ -1,6 +1,11 @@
 import { useCallback, useState } from 'react';
 
-export const CAPABILITY_STORAGE_KEY = 'learner.mediaCapability';
+// Суфікс версії — навмисний. Збірки до виправлення Content-Range у воркері
+// (а раніше — шляху поза scope і втраченого токена) гарантовано провалювали
+// проксі й записували «fallback» назавжди всім, хто їх відкривав. Новий ключ
+// ігнорує ці хибні вердикти. Піднімайте версію, коли зміна воркера робить
+// раніше записані вердикти недостовірними.
+export const CAPABILITY_STORAGE_KEY = 'learner.mediaCapability.v2';
 
 export type MediaCapability = 'proxy' | 'fallback';
 

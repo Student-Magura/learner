@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from 'workbox-precaching';
+import { contentRangeFor } from './contentRange';
 import { createTokenSource } from './tokenSource';
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -89,6 +90,29 @@ async function requestTokenFromPage(force: boolean, clientId: string): Promise<s
   return reply;
 }
 
+// Розмір файлу потрібен, щоб скласти Content-Range (див. contentRange.ts).
+// Кешуємо на час життя воркера: після перезапуску один зайвий запит — дрібниця.
+const fileSizes = new Map<string, number>();
+
+async function fileSize(fileId: string, token: string): Promise<number | null> {
+  const cached = fileSizes.get(fileId);
+  if (cached !== undefined) return cached;
+
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=size&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok) return null;
+    const size = Number(((await response.json()) as { size?: string }).size);
+    if (!Number.isFinite(size) || size <= 0) return null;
+    fileSizes.set(fileId, size);
+    return size;
+  } catch {
+    return null;
+  }
+}
+
 function fetchFromDrive(fileId: string, token: string, range: string | null): Promise<Response> {
   const headers = new Headers({ Authorization: `Bearer ${token}` });
   if (range) headers.set('Range', range);
@@ -105,19 +129,35 @@ async function proxyMedia(request: Request, fileId: string, clientId: string): P
   }
 
   const range = request.headers.get('Range');
-  let upstream = await fetchFromDrive(fileId, token, range);
+  let usedToken = token;
+  let upstream = await fetchFromDrive(fileId, usedToken, range);
 
   // Протермінований або відкликаний токен: беремо свіжий і пробуємо рівно ще
   // раз. Повторний 401 віддаємо як є — це сигнал для запасного шляху плеєра.
   if (upstream.status === 401) {
     const renewed = await tokens.renew(token, clientId);
-    if (renewed) upstream = await fetchFromDrive(fileId, renewed, range);
+    if (renewed) {
+      usedToken = renewed;
+      upstream = await fetchFromDrive(fileId, usedToken, range);
+    }
   }
 
   const out = new Headers();
   for (const name of PASSTHROUGH_HEADERS) {
     const value = upstream.headers.get(name);
     if (value) out.set(name, value);
+  }
+
+  // Drive не відкриває Content-Range у CORS — без нього медіа-движок відкидає
+  // 206 як «Format error». Справжній заголовок, якщо колись стане видимим,
+  // має пріоритет; інакше складаємо його самі.
+  if (upstream.status === 206 && !out.has('content-range')) {
+    const total = await fileSize(fileId, usedToken);
+    const lengthHeader = upstream.headers.get('content-length');
+    const chunkLength = lengthHeader === null ? null : Number(lengthHeader);
+    const contentRange =
+      total === null ? null : contentRangeFor(range, Number.isFinite(chunkLength) ? chunkLength : null, total);
+    if (contentRange) out.set('content-range', contentRange);
   }
   // accept-ranges: bytes стверджує, що тіло — байти медіа, які можна перемотувати
   // Range-запитом. На помилковій відповіді (403/404 і т.п.) тіло — це JSON з
