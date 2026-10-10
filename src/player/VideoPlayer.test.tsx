@@ -1,5 +1,5 @@
 import { fireEvent, render } from '@testing-library/react';
-import { act } from 'react';
+import { act, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VideoPlayer } from './VideoPlayer';
 
@@ -225,6 +225,40 @@ describe('VideoPlayer', () => {
 
     expect(video.play).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it('не зациклюється, коли батько на кожен onProgress перерендерюється з новими колбеками', () => {
+    // Регрес: LessonPage передає onProgress стрілкою, а стор оновлюється синхронно.
+    // Ефект pagehide залежав від reportVideo, тож його cleanup на кожному
+    // рендері примусово репортив позицію — новий рендер — новий cleanup —
+    // нескінченний цикл, що вішав вкладку на паузі.
+    const onProgress = vi.fn();
+    function Parent() {
+      const [, setTick] = useState(0);
+      return (
+        <VideoPlayer
+          fileId="file-1"
+          initialPositionSec={0}
+          onProgress={(position, duration) => {
+            onProgress(position, duration);
+            // Запобіжник: без виправлення тест падає, а не висить.
+            if (onProgress.mock.calls.length < 20) setTick((t) => t + 1);
+          }}
+          onCompleted={() => {}}
+          onEnded={() => {}}
+          onUnsupported={() => {}}
+        />
+      );
+    }
+    const view = render(<Parent />);
+    const video = view.container.querySelector('video')!;
+    const media = stubMedia(video, 600);
+    fireEvent(video, new Event('loadedmetadata'));
+    media.seekTo(30);
+
+    fireEvent(video, new Event('pause'));
+
+    expect(onProgress).toHaveBeenCalledTimes(1);
   });
 
   describe('гонитва першого завантаження, коли Service Worker ще не контролює сторінку', () => {

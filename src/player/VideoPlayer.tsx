@@ -245,15 +245,20 @@ export function VideoPlayer({
   // ефекту, поки ref ще прив'язаний: на unmount cleanup спрацює вже після
   // того, як React обнулить ref.current, тому flush() у cleanup діє саме на
   // цей захоплений вузол, а не читає ref заново.
+  // reportVideo читаємо через ref, а ефект не залежить від нього: батько передає
+  // onProgress стрілкою, тож reportVideo новий на кожному рендері, і cleanup
+  // зі flush() на кожній зміні зациклював рендер (flush → стор → рендер → cleanup).
+  const reportVideoRef = useRef(reportVideo);
+  reportVideoRef.current = reportVideo;
   useEffect(() => {
     const video = ref.current;
-    const flush = () => reportVideo(video, true);
+    const flush = () => reportVideoRef.current(video, true);
     window.addEventListener('pagehide', flush);
     return () => {
       window.removeEventListener('pagehide', flush);
       flush();
     };
-  }, [reportVideo]);
+  }, []);
 
   return (
     <div className="flex flex-col gap-3">
