@@ -59,7 +59,7 @@ describe('CoursePage', () => {
 
   it('показує уроки з посиланнями на плеєр', () => {
     renderPage();
-    expect(screen.getByRole('link', { name: /Перше\.mp4/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Перше/ })).toHaveAttribute(
       'href',
       '/course/c1/lesson/v1',
     );
@@ -67,16 +67,17 @@ describe('CoursePage', () => {
 
   it('позначає переглянуті уроки', () => {
     renderPage({ v1: { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 } });
-    expect(screen.getByRole('link', { name: /Перше\.mp4/ })).toHaveTextContent('✓');
+    expect(
+      screen.getByRole('link', { name: /^Переглянуто:\s*Перше,\s*1:40$/ }),
+    ).toBeInTheDocument();
   });
 
-  it('показує прогрес кожного розділу окремо', () => {
+  it('показує прогрес курсу і лічильник переглянутого в кожному розділі', () => {
     renderPage({ v1: { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 } });
-    // Розділ: 100 з 200 с = 50%. Курс: 100 з 400 с = 25%.
-    const bars = screen.getAllByRole('progressbar');
-    const values = bars.map((b) => b.getAttribute('aria-valuenow'));
-    expect(values).toContain('50');
-    expect(values).toContain('25');
+    // Курс: 100 з 400 с = 25%. Модуль і його розділ: 1 з 2 уроків.
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+    expect(screen.getAllByText('1/2')).toHaveLength(2);
+    expect(screen.getByText('0/1')).toBeInTheDocument();
   });
 
   it('веде «продовжити» на перший урок нового курсу', () => {

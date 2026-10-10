@@ -13,17 +13,17 @@ export function ProgressBar({ ratio, approximate = false }: ProgressBarProps) {
   const percent = rounded >= 100 && clamped < 1 ? 99 : rounded;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       <div
         role="progressbar"
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="h-2 w-full overflow-hidden rounded-full bg-zinc-200"
+        className="h-1.5 w-full overflow-hidden bg-track"
       >
-        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent}%` }} />
+        <div className="h-full bg-accent" style={{ width: `${percent}%` }} />
       </div>
-      <span className="w-14 shrink-0 text-right text-sm tabular-nums text-zinc-600">
+      <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums">
         {approximate ? '≈' : ''}
         {percent}%
       </span>

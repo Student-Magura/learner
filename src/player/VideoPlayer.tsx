@@ -75,10 +75,7 @@ export function VideoPlayer({
     [onCompleted, onProgress],
   );
 
-  const report = useCallback(
-    (force: boolean) => reportVideo(ref.current, force),
-    [reportVideo],
-  );
+  const report = useCallback((force: boolean) => reportVideo(ref.current, force), [reportVideo]);
 
   const handleFailure = useCallback(() => {
     if (readyRef.current || failedRef.current) return;
@@ -258,7 +255,7 @@ export function VideoPlayer({
         controls
         playsInline
         preload="metadata"
-        className="w-full rounded-lg bg-black"
+        className="aspect-video w-full bg-black"
         onLoadedMetadata={handleLoadedMetadata}
         onTimeUpdate={() => report(false)}
         onPause={() => report(true)}
@@ -272,26 +269,31 @@ export function VideoPlayer({
           onEnded();
         }}
       />
-      <label className="flex items-center gap-2 text-sm text-zinc-600">
-        Швидкість
-        <select
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          role="group"
           aria-label="Швидкість"
-          value={speed}
-          className="rounded border border-zinc-300 px-2 py-1"
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            setSpeed(value);
-            if (ref.current) ref.current.playbackRate = value;
-          }}
+          className="grid w-full grid-cols-6 gap-1 sm:flex sm:w-auto sm:gap-1.5"
         >
           {SPEEDS.map((value) => (
-            <option key={value} value={value}>
+            <button
+              key={value}
+              type="button"
+              aria-pressed={speed === value}
+              onClick={() => {
+                setSpeed(value);
+                if (ref.current) ref.current.playbackRate = value;
+              }}
+              className={`min-h-11 border-2 border-fg px-1 text-sm sm:min-w-12 sm:px-2 font-semibold tabular-nums ${
+                speed === value ? 'bg-fg text-bg' : 'text-fg hover:bg-soft'
+              }`}
+            >
               {value}×
-            </option>
+            </button>
           ))}
-        </select>
-        <span className="text-zinc-400">пробіл — пауза, ← → — 5 с</span>
-      </label>
+        </div>
+        <span className="hidden text-xs text-muted sm:inline">пробіл — пауза · ← → — 5 с</span>
+      </div>
     </div>
   );
 }

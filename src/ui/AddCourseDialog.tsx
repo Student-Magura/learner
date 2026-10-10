@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { primaryButton } from './buttons';
 
 export type AddCourseDialogProps = {
   onSubmit(input: string): Promise<void>;
@@ -28,7 +29,7 @@ export function AddCourseDialog({ onSubmit }: AddCourseDialogProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      <label htmlFor="folder-url" className="text-sm font-medium">
+      <label htmlFor="folder-url" className="text-sm font-semibold text-muted">
         Посилання на папку Google Drive
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -36,19 +37,15 @@ export function AddCourseDialog({ onSubmit }: AddCourseDialogProps) {
           id="folder-url"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="https://drive.google.com/drive/folders/..."
-          className="w-full rounded border border-zinc-300 px-3 py-2"
+          placeholder="https://drive.google.com/drive/folders/…"
+          className="min-h-11 w-full border-2 border-rule bg-surface px-3 text-[15px] text-fg placeholder:text-muted"
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="shrink-0 rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-50"
-        >
+        <button type="submit" disabled={busy} className={`shrink-0 ${primaryButton}`}>
           {busy ? 'Сканую…' : 'Додати курс'}
         </button>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm font-medium text-danger">
           {error}
         </p>
       )}

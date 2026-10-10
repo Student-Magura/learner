@@ -1,3 +1,5 @@
+import { secondaryButton } from '../ui/buttons';
+
 export type FallbackPlayerProps = {
   fileId: string;
   completed: boolean;
@@ -23,30 +25,26 @@ export function FallbackPlayer({
         src={`https://drive.google.com/file/d/${fileId}/preview`}
         allow="autoplay"
         allowFullScreen
-        className="aspect-video w-full rounded-lg bg-black"
+        className="aspect-video w-full bg-black"
       />
-      <label className="flex items-center gap-2 text-sm font-medium">
+      <label className="flex min-h-11 cursor-pointer items-center gap-3 text-[15px] font-semibold">
         <input
           type="checkbox"
           checked={completed}
           onChange={onToggleCompleted}
-          className="h-4 w-4"
+          className="h-5 w-5 accent-[var(--accent)]"
         />
         Переглянуто
       </label>
-      <p role="note" className="text-sm text-zinc-500">
-        На цьому пристрої відео показує плеєр Google Drive, тому позиція перегляду не
-        зберігається — відмічайте уроки вручну.
+      <p role="note" className="text-sm text-muted">
+        На цьому пристрої відео показує плеєр Google Drive, тому позиція перегляду не зберігається —
+        відмічайте уроки вручну.
         {onRetryProxy &&
           ' Якщо причина була тимчасова (немає мережі, збій Drive), можна повернутися до' +
             ' вбудованого плеєра застосунку.'}
       </p>
       {onRetryProxy && (
-        <button
-          type="button"
-          onClick={onRetryProxy}
-          className="self-start rounded border border-zinc-300 px-3 py-2 text-sm"
-        >
+        <button type="button" onClick={onRetryProxy} className={`self-start ${secondaryButton}`}>
           Спробувати вбудований плеєр
         </button>
       )}

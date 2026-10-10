@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { CoursePage } from './ui/CoursePage';
 import { LessonPage } from './ui/LessonPage';
 import { LibraryPage } from './ui/LibraryPage';
+import { AppHeader, Logo, ThemeToggle } from './ui/AppHeader';
+import { primaryButton } from './ui/buttons';
 import { createServices } from './app/services';
 import { createLearnerStore } from './store/useStore';
 import type { TokenClient } from './auth/tokenClient';
@@ -53,11 +55,11 @@ export default function App() {
   }, []);
 
   if (fatal) {
-    return <main className="mx-auto max-w-xl p-8 text-red-700">{fatal}</main>;
+    return <main className="mx-auto max-w-xl p-8 text-danger">{fatal}</main>;
   }
 
   if (!store || !tokenClient) {
-    return <main className="mx-auto max-w-xl p-8 text-zinc-500">Завантаження…</main>;
+    return <main className="mx-auto max-w-xl p-8 text-muted">Завантаження…</main>;
   }
 
   return (
@@ -85,9 +87,15 @@ function SignInGate({
 
   if (!signedIn) {
     return (
-      <main className="mx-auto flex max-w-xl flex-col items-start gap-4 p-8">
-        <h1 className="text-2xl font-semibold">Learner</h1>
-        <p className="text-zinc-600">
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 px-4 py-12 sm:px-8">
+        <div className="flex items-center justify-between">
+          <Logo />
+          <ThemeToggle />
+        </div>
+        <h1 className="text-4xl font-extrabold leading-tight tracking-tight">
+          Відеокурси з Google Drive
+        </h1>
+        <p className="text-muted">
           Увійдіть через Google, щоб застосунок міг читати папки курсів і зберігати ваш прогрес.
         </p>
         <button
@@ -99,7 +107,7 @@ function SignInGate({
             setSigningIn(true);
             void tokenClient.signIn().finally(() => setSigningIn(false));
           }}
-          className="rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-50"
+          className={`self-start ${primaryButton}`}
         >
           {signingIn ? 'Вхід…' : 'Увійти через Google'}
         </button>
@@ -144,31 +152,34 @@ function SignedInApp({
   }, [store]);
 
   if (!state.ready) {
-    return <main className="mx-auto max-w-xl p-8 text-zinc-500">Завантаження курсів…</main>;
+    return <main className="mx-auto max-w-xl p-8 text-muted">Завантаження курсів…</main>;
   }
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          <LibraryPage
-            courses={state.courses}
-            progress={state.progress}
-            onAddCourse={async (input) => {
-              await state.addCourse(input);
-            }}
-            onRemoveCourse={(id) => void state.removeCourse(id)}
-          />
-        }
-      />
-      <Route path="/course/:courseId" element={<CourseRoute state={state} />} />
-      <Route
-        path="/course/:courseId/lesson/:videoId"
-        element={<LessonRoute state={state} refreshToken={refreshToken} />}
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <AppHeader />
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <LibraryPage
+              courses={state.courses}
+              progress={state.progress}
+              onAddCourse={async (input) => {
+                await state.addCourse(input);
+              }}
+              onRemoveCourse={(id) => void state.removeCourse(id)}
+            />
+          }
+        />
+        <Route path="/course/:courseId" element={<CourseRoute state={state} />} />
+        <Route
+          path="/course/:courseId/lesson/:videoId"
+          element={<LessonRoute state={state} refreshToken={refreshToken} />}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }
 

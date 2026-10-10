@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { CourseOutline } from './CourseOutline';
 import { ProgressBar } from './ProgressBar';
-import { TreeSection } from './TreeSection';
+import { primaryButton, secondaryButton } from './buttons';
+import { ArrowLeftIcon, PlayIcon } from './icons';
 import { aggregate, findResumeVideoId } from '../progress/aggregate';
 import type { Course, ProgressMap } from '../types';
 
@@ -20,14 +22,18 @@ export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
   const started = stats.completedCount > 0 || stats.ratio > 0;
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-5 p-4">
-      <Link to="/" className="text-sm text-zinc-500 hover:underline">
-        ← Усі курси
+    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-8 sm:py-12">
+      <Link
+        to="/"
+        className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-muted hover:text-fg"
+      >
+        <ArrowLeftIcon />
+        Усі курси
       </Link>
 
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">{course.title}</h1>
-        <p className="text-sm text-zinc-500">
+      <header className="flex flex-col gap-3">
+        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{course.title}</h1>
+        <p className="text-sm text-muted">
           {stats.completedCount} з {stats.videoCount} уроків
         </p>
         <ProgressBar ratio={stats.ratio} approximate={stats.approximate} />
@@ -35,10 +41,8 @@ export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
 
       <div className="flex flex-wrap items-center gap-3">
         {resumeId && (
-          <Link
-            to={`/course/${course.id}/lesson/${resumeId}`}
-            className="rounded bg-zinc-900 px-4 py-2 text-white"
-          >
+          <Link to={`/course/${course.id}/lesson/${resumeId}`} className={primaryButton}>
+            <PlayIcon />
             {started ? 'Продовжити' : 'Почати курс'}
           </Link>
         )}
@@ -58,49 +62,27 @@ export function CoursePage({ course, progress, onRescan }: CoursePageProps) {
               })
               .finally(() => setRescanning(false));
           }}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50"
+          className={secondaryButton}
         >
           {rescanning ? 'Оновлюємо…' : 'Оновити структуру'}
         </button>
       </div>
 
       {rescanError && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm font-medium text-danger">
           {rescanError}
         </p>
       )}
 
       {course.tree.children.length === 0 ? (
-        <p className="text-zinc-500">
-          У цій папці не знайдено жодного відео. Перевірте, що доступ до папки відкритий і що
-          вона містить відеофайли.
+        <p className="text-muted">
+          У цій папці не знайдено жодного відео. Перевірте, що доступ до папки відкритий і що вона
+          містить відеофайли.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {course.tree.children.map((child) =>
-            child.kind === 'folder' ? (
-              <TreeSection
-                key={child.id}
-                node={child}
-                courseId={course.id}
-                progress={progress}
-              />
-            ) : (
-              <TreeSection
-                key={child.id}
-                node={{
-                  // Префікс, щоб синтетична папка не мала того самого id, що й відео в ній.
-                  id: `section-${child.id}`,
-                  kind: 'folder',
-                  title: 'Без розділу',
-                  children: [child],
-                }}
-                courseId={course.id}
-                progress={progress}
-              />
-            ),
-          )}
-        </div>
+        <section aria-label="Програма курсу" className="-mx-4 sm:mx-0">
+          <CourseOutline root={course.tree} courseId={course.id} progress={progress} />
+        </section>
       )}
     </main>
   );

@@ -44,7 +44,7 @@ beforeEach(() => localStorage.clear());
 describe('LessonPage', () => {
   it('показує назву уроку', () => {
     renderLesson();
-    expect(screen.getByRole('heading', { name: 'Друге.mp4' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Друге' })).toBeInTheDocument();
   });
 
   it('за замовчуванням показує власний плеєр', () => {

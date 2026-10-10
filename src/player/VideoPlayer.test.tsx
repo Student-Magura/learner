@@ -180,13 +180,14 @@ describe('VideoPlayer', () => {
     expect(onUnsupported).not.toHaveBeenCalled();
   });
 
-  it('змінює швидкість відтворення вибором зі списку', () => {
+  it('змінює швидкість відтворення кнопкою', () => {
     const { video, view } = setup();
     stubMedia(video, 600);
     fireEvent(video, new Event('loadedmetadata'));
 
-    fireEvent.change(view.getByLabelText('Швидкість'), { target: { value: '1.5' } });
+    fireEvent.click(view.getByRole('button', { name: '1.5×' }));
     expect(video.playbackRate).toBe(1.5);
+    expect(view.getByRole('button', { name: '1.5×' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('пробіл ставить на паузу і знімає з неї', () => {

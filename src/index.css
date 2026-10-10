@@ -1,3 +1,81 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Світла тема — «Аркуш» на палітрі 2 РІЦ. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --soft: #eeeeee;
+  --fg: #000000;
+  --muted: #595959;
+  --line: #e0e0e0;
+  --rule: #000000;
+  --accent: #4285f4;
+  --track: #eeeeee;
+  --primary: #000000;
+  --on-primary: #ffffff;
+  --hero: #000000;
+  --on-hero: #ffffff;
+  --hero-action: #ffffff;
+  --on-hero-action: #000000;
+  --danger: #b53a33;
+  --focus: #4285f4;
+}
+
+/* Темна тема — оливкова палітра DID. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e2e1c;
+  --surface: #123922;
+  --soft: #174229;
+  --fg: #ffffff;
+  --muted: #c0d5c9;
+  --line: rgba(255, 255, 255, 0.18);
+  --rule: #84ae96;
+  --accent: #ffa514;
+  --track: #1f5635;
+  --primary: #ffa514;
+  --on-primary: #0a0a0a;
+  --hero: #174229;
+  --on-hero: #ffffff;
+  --hero-action: #ffa514;
+  --on-hero-action: #0a0a0a;
+  --danger: #e46962;
+  --focus: #ffa514;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0e2e1c;
+    --surface: #123922;
+    --soft: #174229;
+    --fg: #ffffff;
+    --muted: #c0d5c9;
+    --line: rgba(255, 255, 255, 0.18);
+    --rule: #84ae96;
+    --accent: #ffa514;
+    --track: #1f5635;
+    --primary: #ffa514;
+    --on-primary: #0a0a0a;
+    --hero: #174229;
+    --on-hero: #ffffff;
+    --hero-action: #ffa514;
+    --on-hero-action: #0a0a0a;
+    --danger: #e46962;
+    --focus: #ffa514;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
