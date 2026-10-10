@@ -49,6 +49,11 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
   if (data?.type === 'SET_TOKEN' && typeof data.token === 'string') {
     tokens.set(data.token);
   }
+  // Сторінка після жорсткого перезавантаження лишається без контролера, а
+  // claim() з activate вже відпрацював. Плеєр просить взяти її явно.
+  if (data?.type === 'CLAIM') {
+    event.waitUntil(self.clients.claim());
+  }
 });
 
 self.addEventListener('fetch', (event: FetchEvent) => {

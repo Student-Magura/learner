@@ -228,18 +228,39 @@ describe('VideoPlayer', () => {
   });
 
   describe('гонитва першого завантаження, коли Service Worker ще не контролює сторінку', () => {
-    it('не викликає onUnsupported на error, поки controller === null; після готовності воркера перезавантажує відео', async () => {
-      let readyResolve: (reg: unknown) => void = () => {};
+    /**
+     * Сторінка без контролера з активним воркером. `claim()` імітує те, що
+     * робить справжній воркер на CLAIM: бере сторінку й шле controllerchange.
+     */
+    function stubUncontrolledWorker() {
+      let controller: ServiceWorker | null = null;
+      const listeners = new Set<() => void>();
+      const postMessage = vi.fn();
+      let readyResolve: () => void = () => {};
       const ready = new Promise((resolve) => {
-        readyResolve = resolve;
+        readyResolve = () => resolve({ active: { postMessage } });
       });
       const restore = stubServiceWorker({
-        controller: null,
+        get controller() {
+          return controller;
+        },
         ready,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
+        addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+        removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
       } as unknown as ServiceWorkerContainer);
+      return {
+        restore,
+        postMessage,
+        activate: () => readyResolve(),
+        claim() {
+          controller = {} as ServiceWorker;
+          for (const listener of [...listeners]) listener();
+        },
+      };
+    }
 
+    it('не викликає onUnsupported на error, поки controller === null; перезавантажує відео, коли воркер взяв сторінку', async () => {
+      const sw = stubUncontrolledWorker();
       const { video, onUnsupported } = setup();
       const loadSpy = vi.fn();
       video.load = loadSpy;
@@ -247,15 +268,54 @@ describe('VideoPlayer', () => {
       fireEvent(video, new Event('error'));
       expect(onUnsupported).not.toHaveBeenCalled();
 
-      readyResolve({});
+      sw.activate();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      sw.claim();
+
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+      expect(onUnsupported).not.toHaveBeenCalled();
+      sw.restore();
+    });
+
+    it('після жорсткого перезавантаження просить активний воркер взяти сторінку і не повторює запит до того', async () => {
+      // Регрес: Cmd+Shift+R лишає сторінку без контролера при активному воркері.
+      // ready вже виконаний, тож повтор ішов повз воркер на Pages (404) і
+      // записував вердикт «fallback» назавжди.
+      const sw = stubUncontrolledWorker();
+      const { video, onUnsupported } = setup();
+      const loadSpy = vi.fn();
+      video.load = loadSpy;
+
+      fireEvent(video, new Event('error'));
+      sw.activate();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
 
-      expect(loadSpy).toHaveBeenCalledTimes(1);
+      expect(sw.postMessage).toHaveBeenCalledWith({ type: 'CLAIM' });
+      expect(loadSpy).not.toHaveBeenCalled();
       expect(onUnsupported).not.toHaveBeenCalled();
 
-      restore();
+      sw.claim();
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+      sw.restore();
+    });
+
+    it('ставить вердикт по таймауту метаданих, якщо воркер так і не взяв сторінку', async () => {
+      const sw = stubUncontrolledWorker();
+      const { video, onUnsupported } = setup();
+      video.load = vi.fn();
+
+      fireEvent(video, new Event('error'));
+      sw.activate();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+
+      expect(onUnsupported).toHaveBeenCalledTimes(1);
+      sw.restore();
     });
 
     it('викликає onUnsupported один раз, якщо сторінка вже контролюється при помилці', () => {
@@ -348,33 +408,24 @@ describe('VideoPlayer', () => {
     });
 
     it('викликає onUnsupported, якщо повторна спроба після готовності воркера теж провалюється', async () => {
-      let readyResolve: (reg: unknown) => void = () => {};
-      const ready = new Promise((resolve) => {
-        readyResolve = resolve;
-      });
-      const restore = stubServiceWorker({
-        controller: null,
-        ready,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      } as unknown as ServiceWorkerContainer);
-
+      const sw = stubUncontrolledWorker();
       const { video, onUnsupported } = setup();
       video.load = vi.fn();
 
       fireEvent(video, new Event('error'));
       expect(onUnsupported).not.toHaveBeenCalled();
 
-      readyResolve({});
+      sw.activate();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
+      sw.claim();
       expect(onUnsupported).not.toHaveBeenCalled();
 
       fireEvent(video, new Event('error'));
       expect(onUnsupported).toHaveBeenCalledTimes(1);
 
-      restore();
+      sw.restore();
     });
   });
 });

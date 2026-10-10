@@ -148,12 +148,20 @@ export function VideoPlayer({
       if (video) video.load();
     };
 
+    // Повторюємо лише коли воркер справді взяв сторінку: ready означає «воркер
+    // активний», а не «контролює». Після жорсткого перезавантаження (Shift+Reload)
+    // сторінка лишається без контролера при активному воркері, і повтор пішов би
+    // повз нього на статичний сервер. Такий воркер просимо взяти сторінку сам.
+    // Якщо controllerchange так і не настане, вердикт поставить METADATA_TIMEOUT_MS.
     sw.addEventListener('controllerchange', retry);
     cancelRetryRef.current = () => {
       settled = true;
       sw.removeEventListener('controllerchange', retry);
     };
-    void sw.ready.then(retry);
+    void sw.ready.then((registration) => {
+      if (sw.controller) retry();
+      else registration.active?.postMessage({ type: 'CLAIM' });
+    });
   }, [onRecoverToken, onUnsupported]);
 
   // Якщо компонент розмонтувався до того, як воркер відповів — не лишаємо
