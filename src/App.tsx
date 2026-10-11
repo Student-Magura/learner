@@ -43,6 +43,8 @@ export default function App() {
         // порядку хуків і не проходив далі екрана завантаження.
         setRefreshToken(() => refresh);
         setStore(() => createLearnerStore(deps));
+        // Токен, відновлений після перезавантаження, не викликає onChange.
+        setSignedIn(client.isSignedIn());
         client.onChange(setSignedIn);
       })
       .catch((cause: unknown) => {

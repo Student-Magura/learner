@@ -9,6 +9,7 @@ let requestAccessToken: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-20T12:00:00Z'));
+  localStorage.clear();
   requestAccessToken = vi.fn();
   (globalThis as any).google = {
     accounts: {
@@ -24,6 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   delete (globalThis as any).google;
 });
 
@@ -210,5 +212,74 @@ describe('tokenClient', () => {
 
     callback({ access_token: 'tok-consent', expires_in: 3600 });
     await expect(signInPromise).resolves.toBe('tok-consent');
+  });
+});
+
+describe('tokenClient після перезавантаження сторінки', () => {
+  async function signInOnce(): Promise<void> {
+    const client = createTokenClient('cid');
+    const promise = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await promise;
+  }
+
+  it('новий клієнт підхоплює чинний токен без запиту до GIS', async () => {
+    await signInOnce();
+    requestAccessToken.mockClear();
+
+    vi.setSystemTime(new Date('2026-09-20T12:30:00Z'));
+    const reloaded = createTokenClient('cid');
+
+    expect(reloaded.isSignedIn()).toBe(true);
+    await expect(reloaded.getToken()).resolves.toBe('tok-1');
+    expect(requestAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('протермінований токен не відновлюється', async () => {
+    await signInOnce();
+
+    vi.setSystemTime(new Date('2026-09-20T13:30:00Z'));
+    const reloaded = createTokenClient('cid');
+
+    expect(reloaded.isSignedIn()).toBe(false);
+  });
+
+  it('після signOut перезавантаження показує вхід', async () => {
+    const client = createTokenClient('cid');
+    const promise = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await promise;
+    client.signOut();
+
+    expect(createTokenClient('cid').isSignedIn()).toBe(false);
+  });
+
+  it('після невдалого поновлення відкинутий токен не відновлюється', async () => {
+    const client = createTokenClient('cid');
+    const first = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await first;
+
+    const forced = client.getToken({ force: true });
+    callback({ error: 'interaction_required' });
+    await expect(forced).rejects.toBeInstanceOf(AuthRequiredError);
+
+    expect(createTokenClient('cid').isSignedIn()).toBe(false);
+  });
+
+  it('недоступне сховище не ламає вхід', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError');
+    });
+
+    const client = createTokenClient('cid');
+    expect(client.isSignedIn()).toBe(false);
+    const promise = client.signIn();
+    callback({ access_token: 'tok-1', expires_in: 3600 });
+    await expect(promise).resolves.toBe('tok-1');
+    expect(client.isSignedIn()).toBe(true);
   });
 });

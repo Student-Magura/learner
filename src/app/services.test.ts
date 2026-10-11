@@ -55,6 +55,8 @@ function stubServiceWorker() {
 
 beforeEach(() => {
   vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'client-id');
+  // tokenClient зберігає токен між перезавантаженнями — і між тестами теж.
+  localStorage.clear();
   stubGis();
   restoreServiceWorker = stubServiceWorker();
 });

@@ -59,12 +59,43 @@ export type TokenClient = {
   signIn(): Promise<string>;
   getToken(opts?: { force?: boolean }): Promise<string>;
   signOut(): void;
+  isSignedIn(): boolean;
   onChange(cb: (signedIn: boolean) => void): () => void;
 };
 
+/**
+ * Токен переживає перезавантаження сторінки: тихого входу на старті бути не
+ * може — GIS відкриває popup, а браузер блокує його без жесту користувача.
+ * Сховище може кидати (приватний режим, заборонені cookies) — тоді працюємо
+ * як раніше, лише в памʼяті.
+ */
+const STORAGE_KEY = 'learner.token';
+
+function loadStored(): { token: string; expiresAt: number } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: unknown; expiresAt?: unknown };
+    if (typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'number') return null;
+    return { token: parsed.token, expiresAt: parsed.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+function saveStored(token: string | null, expiresAt: number): void {
+  try {
+    if (token === null) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, expiresAt }));
+  } catch {
+    // Без сховища лишаємося з токеном у памʼяті — вхід працює до перезавантаження.
+  }
+}
+
 export function createTokenClient(clientId: string): TokenClient {
-  let token: string | null = null;
-  let expiresAt = 0;
+  const stored = loadStored();
+  let token: string | null = stored?.token ?? null;
+  let expiresAt = stored?.expiresAt ?? 0;
   // Запит, що зараз летить до GIS, і всі, хто на нього чекає.
   let pending: { waiters: Waiter[] } | null = null;
   // Черга waiter-ів, яким недостатньо результату запиту з `pending` (див.
@@ -104,11 +135,13 @@ export function createTokenClient(clientId: string): TokenClient {
         // мертвий токен замість негайного переходу на екран входу.
         token = null;
         expiresAt = 0;
+        saveStored(null, 0);
         notify(false);
         for (const waiter of waiters) waiter.reject(err);
       } else {
         token = resp.access_token;
         expiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000;
+        saveStored(token, expiresAt);
         notify(true);
         for (const waiter of waiters) waiter.resolve(token);
       }
@@ -182,8 +215,10 @@ export function createTokenClient(clientId: string): TokenClient {
     signOut: () => {
       token = null;
       expiresAt = 0;
+      saveStored(null, 0);
       notify(false);
     },
+    isSignedIn: isFresh,
     onChange: (cb) => {
       listeners.add(cb);
       return () => listeners.delete(cb);

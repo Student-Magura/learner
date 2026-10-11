@@ -43,11 +43,11 @@ beforeEach(async () => {
       signIn: vi.fn(async () => 'tok'),
       getToken: vi.fn(async () => 'tok'),
       signOut: vi.fn(),
-      // Застосунок стартує вже з дійсним токеном: нас цікавить вміст, а не вхід.
-      onChange: (cb: (signedIn: boolean) => void) => {
-        cb(true);
-        return () => {};
-      },
+      // Застосунок стартує вже з дійсним токеном (відновленим після
+      // перезавантаження): нас цікавить вміст, а не вхід. onChange, як і
+      // справжній, при підписці не спрацьовує.
+      isSignedIn: () => true,
+      onChange: () => () => {},
     },
   }));
 });
