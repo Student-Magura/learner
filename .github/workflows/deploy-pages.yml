@@ -27,6 +27,7 @@ jobs:
       - run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_CATALOG_FOLDER_ID: ${{ vars.VITE_CATALOG_FOLDER_ID }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import { DriveError } from '../drive/api';
-import { scanCourse } from '../drive/courseScanner';
+import { FOLDER_MIME, scanCourse } from '../drive/courseScanner';
 import { parseFolderId } from '../drive/parseFolderUrl';
 import { mergeProgress } from '../storage/mergeProgress';
 import type { DriveApi } from '../drive/api';
@@ -13,6 +13,8 @@ export type StoreDeps = {
   db: LearnerDb;
   api: DriveApi;
   sync: SyncEngine;
+  /** Папка Drive, кожна підпапка якої — курс, доступний усім. Без неї каталогу немає. */
+  catalogFolderId?: string;
   now?: () => number;
 };
 
@@ -20,7 +22,14 @@ export type LearnerState = {
   courses: Course[];
   progress: ProgressMap;
   ready: boolean;
+  /** Каталог оновлюється у фоні — бібліотека показує індикатор. */
+  catalogSyncing: boolean;
   init(): Promise<void>;
+  /**
+   * Додає нові підпапки каталогу й прибирає зниклі. Вже відомі курси не пересканьовує —
+   * це десятки запитів на кожен старт; для оновлення є rescan на сторінці курсу.
+   */
+  syncCatalog(): Promise<void>;
   /** Підтягує чужий прогрес і вливає його в стан — при поверненні вкладки у фокус. */
   syncFromRemote(): Promise<void>;
   /** Форсує відкладену синхронізацію — на pagehide, поки вкладка ще жива. */
@@ -46,7 +55,7 @@ function rethrowFriendly(cause: unknown): never {
 export function createLearnerStore(
   deps: StoreDeps,
 ): UseBoundStore<StoreApi<LearnerState>> {
-  const { db, api, sync } = deps;
+  const { db, api, sync, catalogFolderId } = deps;
   const now = deps.now ?? (() => Date.now());
 
   return create<LearnerState>((set, get) => {
@@ -68,14 +77,53 @@ export function createLearnerStore(
       sync.scheduleSync();
     }
 
+    /** Курс каталогу: новий сканується, власний з тим самим id лише переходить у каталог. */
+    async function adoptCatalogCourse(id: string): Promise<void> {
+      const existing = get().courses.find((c) => c.id === id);
+      if (existing?.source === 'catalog') return;
+      const base = existing ?? (await scanCourse(api, id, now()));
+      const course: Course = { ...base, source: 'catalog' };
+      await db.putCourse(course);
+      set({ courses: [...get().courses.filter((c) => c.id !== id), course] });
+    }
+
+    async function runCatalogSync(folderId: string): Promise<void> {
+      set({ catalogSyncing: true });
+      try {
+        const entries = await api.listFolder(folderId);
+        const ids = new Set(entries.filter((e) => e.mimeType === FOLDER_MIME).map((e) => e.id));
+
+        // Прогрес зниклих курсів лишається — як і в removeCourse.
+        const gone = get().courses.filter((c) => c.source === 'catalog' && !ids.has(c.id));
+        await Promise.all(gone.map((c) => db.deleteCourse(c.id)));
+        set({ courses: get().courses.filter((c) => !gone.includes(c)) });
+
+        // Курс, що не просканувався, просто спробує знову на наступному старті —
+        // через нього не мусять пропадати інші.
+        await Promise.all([...ids].map((id) => adoptCatalogCourse(id).catch(() => {})));
+      } catch {
+        // Офлайн або немає доступу до каталогу: закешовані курси лишаються.
+      } finally {
+        set({ catalogSyncing: false });
+      }
+    }
+
+    // init під StrictMode і фокус вкладки можуть зійтися — другий прохід лише дублював би скани.
+    let catalogRun: Promise<void> | null = null;
+
     return {
       courses: [],
       progress: {},
       ready: false,
+      catalogSyncing: false,
 
       async init() {
         const [courses, progress] = await Promise.all([db.getCourses(), db.getProgress()]);
         set({ courses, progress });
+
+        // Каталог тягнеться у фоні: перше сканування — це хвилини запитів, а
+        // закешовані курси й прогрес уже можна показувати.
+        void get().syncCatalog();
 
         // Синхронізація — покращення, а не умова запуску: офлайн застосунок мусить працювати.
         await get().syncFromRemote();
@@ -96,6 +144,14 @@ export function createLearnerStore(
         }
       },
 
+      async syncCatalog() {
+        if (!catalogFolderId) return;
+        catalogRun ??= runCatalogSync(catalogFolderId).finally(() => {
+          catalogRun = null;
+        });
+        await catalogRun;
+      },
+
       async flushSync() {
         // flush сам ковтає помилки: прогрес уже в IndexedDB.
         await sync.flush();
@@ -105,6 +161,9 @@ export function createLearnerStore(
         const folderId = parseFolderId(input);
         if (!folderId) {
           throw new Error('Потрібне посилання на папку Google Drive або її ID');
+        }
+        if (get().courses.some((c) => c.id === folderId && c.source === 'catalog')) {
+          throw new Error('Цей курс уже є в каталозі.');
         }
 
         const course = await scanCourse(api, folderId, now()).catch(rethrowFriendly);
@@ -124,7 +183,12 @@ export function createLearnerStore(
         // Rescan теж падає, коли права на папку змінилися — і так само мусить
         // казати про це людською мовою: цю помилку показує CoursePage.
         const scanned = await scanCourse(api, id, now()).catch(rethrowFriendly);
-        const course: Course = { ...scanned, addedAt: existing?.addedAt ?? scanned.addedAt };
+        const course: Course = {
+          ...scanned,
+          addedAt: existing?.addedAt ?? scanned.addedAt,
+          // Інакше rescan тихо переводив би курс каталогу у власні.
+          source: existing?.source,
+        };
         await db.putCourse(course);
         set({ courses: get().courses.map((c) => (c.id === id ? course : c)) });
       },

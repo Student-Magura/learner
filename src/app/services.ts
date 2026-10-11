@@ -67,5 +67,9 @@ export async function createServices(): Promise<Services> {
   const api = createDriveApi(getToken);
   const sync = createSyncEngine(db, api);
 
-  return { db, api, sync, tokenClient, refreshToken };
+  // Порожній рядок — теж «каталогу немає»: так змінна виглядає, коли її не задали в CI.
+  const catalogFolderId =
+    (import.meta.env.VITE_CATALOG_FOLDER_ID as string | undefined) || undefined;
+
+  return { db, api, sync, catalogFolderId, tokenClient, refreshToken };
 }

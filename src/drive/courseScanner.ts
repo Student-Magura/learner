@@ -2,7 +2,7 @@ import { naturalCompare } from './naturalSort';
 import type { DriveApi, DriveFile } from './api';
 import type { Course, FolderNode, TreeNode } from '../types';
 
-const FOLDER_MIME = 'application/vnd.google-apps.folder';
+export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 /** Захист від циклів через ярлики Drive: реальні курси значно дрібніші. */
 const MAX_DEPTH = 12;

@@ -74,6 +74,19 @@ describe('createServices', () => {
     await expect(createServices()).rejects.toThrow(/VITE_GOOGLE_CLIENT_ID/);
   });
 
+  it('бере папку каталогу з VITE_CATALOG_FOLDER_ID', async () => {
+    vi.stubEnv('VITE_CATALOG_FOLDER_ID', 'catalog-folder-id');
+    await expect(createServices()).resolves.toMatchObject({
+      catalogFolderId: 'catalog-folder-id',
+    });
+  });
+
+  it('без VITE_CATALOG_FOLDER_ID працює без каталогу', async () => {
+    vi.stubEnv('VITE_CATALOG_FOLDER_ID', '');
+    const services = await createServices();
+    expect(services.catalogFolderId).toBeUndefined();
+  });
+
   it('прокидує { force: true } із Drive API до tokenClient після 401', async () => {
     // Регрес: геттер токена був нуль-арною лямбдою, тому force губився, і Drive
     // отримував назад той самий токен, який щойно відкинув із 401 — тихе

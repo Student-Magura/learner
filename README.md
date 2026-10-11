@@ -7,7 +7,7 @@ PWA, що перетворює папку Google Drive у відеокурс і�
 ## Запуск
 
 1. Налаштувати Google Cloud за `docs/google-cloud-setup.md`
-2. `cp .env.example .env.local` і вписати `VITE_GOOGLE_CLIENT_ID`
+2. `cp .env.example .env.local` і вписати `VITE_GOOGLE_CLIENT_ID` (і, за потреби, `VITE_CATALOG_FOLDER_ID` — папку спільного каталогу курсів)
 3. `npm install`
 4. `npm run dev`
 

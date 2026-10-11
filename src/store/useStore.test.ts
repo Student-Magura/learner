@@ -5,7 +5,7 @@ import { openLearnerDb } from '../storage/db';
 import { DriveError } from '../drive/api';
 import { COURSE_LISTING, ROOT_FILE, ROOT_ID } from '../test/fixtures/driveCourse';
 import type { LearnerDb } from '../storage/db';
-import type { DriveApi } from '../drive/api';
+import type { DriveApi, DriveFile } from '../drive/api';
 import type { SyncEngine } from '../storage/syncEngine';
 import type { ProgressMap } from '../types';
 
@@ -303,5 +303,213 @@ describe('setCompleted', () => {
     await Promise.all([completedCall, positionCall]);
 
     expect(store.getState().progress.v1).toMatchObject({ positionSec: 90, completed: true });
+  });
+});
+
+describe('syncCatalog', () => {
+  const CATALOG_ID = 'catalog-fixture-0000000000000';
+  const A_ID = 'catalog-course-a-00000000000';
+  const B_ID = 'catalog-course-b-00000000000';
+  const FOLDER = 'application/vnd.google-apps.folder';
+  const folder = (id: string, name: string): DriveFile => ({
+    id,
+    name,
+    mimeType: FOLDER,
+    trashed: false,
+    durationSec: null,
+  });
+  const video = (id: string): DriveFile => ({
+    id,
+    name: `${id}.mp4`,
+    mimeType: 'video/mp4',
+    trashed: false,
+    durationSec: 60,
+  });
+
+  /** Каталог із двох курсів; ROOT_ID — курс, який раніше могли додати вручну. */
+  function catalogApi(entries = [folder(A_ID, 'Курс А'), folder(B_ID, 'Курс Б')]): DriveApi {
+    const listing: Record<string, DriveFile[]> = {
+      ...COURSE_LISTING,
+      [CATALOG_ID]: [...entries, { ...video('stray'), name: 'не курс.mp4' }],
+      [A_ID]: [video('vA')],
+      [B_ID]: [video('vB')],
+    };
+    const files: Record<string, DriveFile> = {
+      [ROOT_ID]: ROOT_FILE,
+      ...Object.fromEntries(entries.map((e) => [e.id, e])),
+    };
+    return {
+      ...fakeApi(),
+      listFolder: vi.fn(async (id: string) => listing[id] ?? []),
+      getFile: vi.fn(async (id: string) => files[id]!),
+    };
+  }
+
+  function catalogStore(api: DriveApi) {
+    return createLearnerStore({ db, api, sync: fakeSync(), catalogFolderId: CATALOG_ID });
+  }
+
+  it('додає кожну підпапку каталогу як курс каталогу', async () => {
+    const store = catalogStore(catalogApi());
+    await store.getState().init();
+
+    await store.getState().syncCatalog();
+
+    const courses = store.getState().courses;
+    expect(courses.map((c) => c.title).sort()).toEqual(['Курс А', 'Курс Б']);
+    expect(courses.every((c) => c.source === 'catalog')).toBe(true);
+    await expect(db.getCourses()).resolves.toHaveLength(2);
+  });
+
+  it('init не чекає на каталог, а запускає його у фоні', async () => {
+    const api = catalogApi();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const list = api.listFolder;
+    api.listFolder = vi.fn(async (id: string) => {
+      if (id === CATALOG_ID) await gate;
+      return list(id);
+    });
+    const store = catalogStore(api);
+
+    await store.getState().init();
+
+    expect(store.getState().ready).toBe(true);
+    expect(store.getState().catalogSyncing).toBe(true);
+    release();
+    await store.getState().syncCatalog();
+    expect(store.getState().catalogSyncing).toBe(false);
+    expect(store.getState().courses).toHaveLength(2);
+  });
+
+  it('не пересканьовує курс каталогу, який уже є', async () => {
+    const api = catalogApi();
+    const store = catalogStore(api);
+    await store.getState().init();
+    await store.getState().syncCatalog();
+    vi.mocked(api.listFolder).mockClear();
+
+    await store.getState().syncCatalog();
+
+    expect(api.listFolder).toHaveBeenCalledTimes(1);
+    expect(api.listFolder).toHaveBeenCalledWith(CATALOG_ID);
+  });
+
+  it('прибирає курс, якого більше немає в каталозі, але зберігає прогрес', async () => {
+    const store = catalogStore(catalogApi());
+    await store.getState().init();
+    await store.getState().syncCatalog();
+    await store.getState().setPosition('vB', 30, 60);
+
+    const shrunk = createLearnerStore({
+      db,
+      api: catalogApi([folder(A_ID, 'Курс А')]),
+      sync: fakeSync(),
+      catalogFolderId: CATALOG_ID,
+    });
+    await shrunk.getState().init();
+    await shrunk.getState().syncCatalog();
+
+    expect(shrunk.getState().courses.map((c) => c.id)).toEqual([A_ID]);
+    await expect(db.getProgress()).resolves.toHaveProperty('vB');
+  });
+
+  it('не чіпає власні курси, яких немає в каталозі', async () => {
+    const store = catalogStore(catalogApi());
+    await store.getState().init();
+    await store.getState().addCourse(ROOT_ID);
+
+    await store.getState().syncCatalog();
+
+    const own = store.getState().courses.find((c) => c.id === ROOT_ID);
+    expect(own?.source).not.toBe('catalog');
+  });
+
+  it('власний курс, що опинився в каталозі, стає курсом каталогу без дубля', async () => {
+    const api = catalogApi([folder(ROOT_ID, 'Product Management Course')]);
+    const store = catalogStore(api);
+    await store.getState().init();
+    await store.getState().addCourse(ROOT_ID);
+
+    await store.getState().syncCatalog();
+
+    expect(store.getState().courses).toHaveLength(1);
+    expect(store.getState().courses[0]?.source).toBe('catalog');
+    expect((await db.getCourse(ROOT_ID))?.source).toBe('catalog');
+  });
+
+  it('збій скану одного курсу не заважає іншим', async () => {
+    const api = catalogApi();
+    const getFile = api.getFile;
+    api.getFile = vi.fn(async (id: string) => {
+      if (id === A_ID) throw new DriveError(500, 'Drive API 500');
+      return getFile(id);
+    });
+    const store = catalogStore(api);
+    await store.getState().init();
+
+    await store.getState().syncCatalog();
+
+    expect(store.getState().courses.map((c) => c.id)).toEqual([B_ID]);
+    expect(store.getState().catalogSyncing).toBe(false);
+  });
+
+  it('офлайн лишає закешовані курси каталогу на місці', async () => {
+    const api = catalogApi();
+    const store = catalogStore(api);
+    await store.getState().init();
+    await store.getState().syncCatalog();
+
+    api.listFolder = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(store.getState().syncCatalog()).resolves.toBeUndefined();
+
+    expect(store.getState().courses).toHaveLength(2);
+    expect(store.getState().catalogSyncing).toBe(false);
+  });
+
+  it('одночасні виклики злипаються в одну синхронізацію', async () => {
+    const api = catalogApi();
+    const store = catalogStore(api);
+    await store.getState().init();
+    await store.getState().syncCatalog();
+    vi.mocked(api.listFolder).mockClear();
+
+    await Promise.all([store.getState().syncCatalog(), store.getState().syncCatalog()]);
+
+    expect(api.listFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it('без catalogFolderId нічого не робить', async () => {
+    const api = catalogApi();
+    const store = createLearnerStore({ db, api, sync: fakeSync() });
+    await store.getState().init();
+
+    await store.getState().syncCatalog();
+
+    expect(api.listFolder).not.toHaveBeenCalled();
+    expect(store.getState().catalogSyncing).toBe(false);
+  });
+
+  it('rescan курсу каталогу лишає його в каталозі', async () => {
+    const store = catalogStore(catalogApi());
+    await store.getState().init();
+    await store.getState().syncCatalog();
+
+    await store.getState().rescanCourse(A_ID);
+
+    expect(store.getState().courses.find((c) => c.id === A_ID)?.source).toBe('catalog');
+  });
+
+  it('addCourse відмовляє курсу, який уже є в каталозі', async () => {
+    const store = catalogStore(catalogApi());
+    await store.getState().init();
+    await store.getState().syncCatalog();
+
+    await expect(
+      store.getState().addCourse(`https://drive.google.com/drive/folders/${A_ID}`),
+    ).rejects.toThrow(/каталоз/i);
+    expect(store.getState().courses.find((c) => c.id === A_ID)?.source).toBe('catalog');
   });
 });

@@ -167,6 +167,7 @@ function SignedInApp({
             <LibraryPage
               courses={state.courses}
               progress={state.progress}
+              catalogSyncing={state.catalogSyncing}
               onAddCourse={async (input) => {
                 await state.addCourse(input);
               }}

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ function renderPage(over: Partial<Parameters<typeof LibraryPage>[0]> = {}) {
   const props = {
     courses: [course],
     progress: {} as ProgressMap,
+    catalogSyncing: false,
     onAddCourse: vi.fn(async () => {}),
     onRemoveCourse: vi.fn(),
     ...over,
@@ -107,5 +108,58 @@ describe('LibraryPage', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
     await userEvent.click(screen.getByRole('button', { name: /прибрати/i }));
     expect(props.onRemoveCourse).not.toHaveBeenCalled();
+  });
+
+  describe('каталог', () => {
+    const catalogCourse = (id: string, title: string): Course => ({
+      ...course,
+      id,
+      title,
+      source: 'catalog',
+      tree: { ...course.tree, id, title },
+    });
+
+    it('показує курси каталогу й власні в окремих розділах', () => {
+      renderPage({ courses: [course, catalogCourse('k1', 'Кібербезпека')] });
+
+      const catalog = screen.getByRole('region', { name: 'Каталог' });
+      const own = screen.getByRole('region', { name: 'Власні курси' });
+      expect(within(catalog).getByRole('link', { name: 'Кібербезпека' })).toBeInTheDocument();
+      expect(within(catalog).queryByRole('link', { name: 'Product Management' })).toBeNull();
+      expect(within(own).getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
+    });
+
+    it('курс каталогу не можна прибрати', () => {
+      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')] });
+      expect(screen.queryByRole('button', { name: /прибрати/i })).toBeNull();
+    });
+
+    it('впорядковує каталог за назвою природним порядком', () => {
+      renderPage({
+        courses: [catalogCourse('k10', '10 - Пізній'), catalogCourse('k2', '2 - Ранній')],
+      });
+      const links = within(screen.getByRole('region', { name: 'Каталог' })).getAllByRole('link');
+      expect(links.map((l) => l.textContent)).toEqual(['2 - Ранній', '10 - Пізній']);
+    });
+
+    it('показує, що каталог оновлюється', () => {
+      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')], catalogSyncing: true });
+      expect(screen.getByRole('status')).toHaveTextContent(/оновлюємо каталог/i);
+    });
+
+    it('показує індикатор і тоді, коли каталог ще порожній', () => {
+      renderPage({ courses: [], catalogSyncing: true });
+      expect(screen.getByRole('status')).toHaveTextContent(/оновлюємо каталог/i);
+    });
+
+    it('не показує індикатор, коли оновлення закінчилось', () => {
+      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')] });
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('без курсів каталогу розділу каталогу немає', () => {
+      renderPage({ courses: [course] });
+      expect(screen.queryByRole('region', { name: 'Каталог' })).toBeNull();
+    });
   });
 });
