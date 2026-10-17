@@ -77,14 +77,19 @@ describe('createServices', () => {
   it('бере папку каталогу з VITE_CATALOG_FOLDER_ID', async () => {
     vi.stubEnv('VITE_CATALOG_FOLDER_ID', 'catalog-folder-id');
     await expect(createServices()).resolves.toMatchObject({
-      catalogFolderId: 'catalog-folder-id',
+      builtinCatalogId: 'catalog-folder-id',
     });
   });
 
   it('без VITE_CATALOG_FOLDER_ID працює без каталогу', async () => {
     vi.stubEnv('VITE_CATALOG_FOLDER_ID', '');
     const services = await createServices();
-    expect(services.catalogFolderId).toBeUndefined();
+    expect(services.builtinCatalogId).toBeUndefined();
+  });
+
+  it('створює синхронізацію бібліотеки', async () => {
+    const services = await createServices();
+    expect(services.librarySync.syncNow).toBeTypeOf('function');
   });
 
   it('прокидує { force: true } із Drive API до tokenClient після 401', async () => {

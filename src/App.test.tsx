@@ -38,6 +38,11 @@ beforeEach(async () => {
     db,
     api: fakeApi(),
     sync,
+    librarySync: {
+      syncNow: vi.fn(async () => ({})),
+      scheduleSync: vi.fn(),
+      flush: vi.fn(async () => {}),
+    },
     refreshToken: vi.fn(async () => {}),
     tokenClient: {
       signIn: vi.fn(async () => 'tok'),

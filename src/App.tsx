@@ -167,7 +167,8 @@ function SignedInApp({
             <LibraryPage
               courses={state.courses}
               progress={state.progress}
-              catalogSyncing={state.catalogSyncing}
+              // Тимчасово, до нової бібліотеки (Задача 8).
+              catalogSyncing={Object.values(state.catalogStatus).includes('syncing')}
               onAddCourse={async (input) => {
                 await state.addCourse(input);
               }}

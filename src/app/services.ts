@@ -1,5 +1,6 @@
 import { createTokenClient, waitForGis } from '../auth/tokenClient';
 import { createDriveApi } from '../drive/api';
+import { createLibrarySync } from '../library/librarySync';
 import { openLearnerDb } from '../storage/db';
 import { createSyncEngine } from '../storage/syncEngine';
 import { answerTokenRequests } from '../sw/answerTokenRequests';
@@ -63,13 +64,15 @@ export async function createServices(): Promise<Services> {
     });
   }
 
-  const db = await openLearnerDb();
-  const api = createDriveApi(getToken);
-  const sync = createSyncEngine(db, api);
-
   // Порожній рядок — теж «каталогу немає»: так змінна виглядає, коли її не задали в CI.
-  const catalogFolderId =
+  const builtinCatalogId =
     (import.meta.env.VITE_CATALOG_FOLDER_ID as string | undefined) || undefined;
 
-  return { db, api, sync, catalogFolderId, tokenClient, refreshToken };
+  // Id вбудованого каталогу потрібен міграції IndexedDB v1 → v2.
+  const db = await openLearnerDb('learner', { builtinCatalogId });
+  const api = createDriveApi(getToken);
+  const sync = createSyncEngine(db, api);
+  const librarySync = createLibrarySync(db, api);
+
+  return { db, api, sync, librarySync, builtinCatalogId, tokenClient, refreshToken };
 }
