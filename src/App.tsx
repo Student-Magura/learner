@@ -6,6 +6,7 @@ import { LibraryPage } from './ui/LibraryPage';
 import { AppHeader, Logo, ThemeToggle } from './ui/AppHeader';
 import { primaryButton } from './ui/buttons';
 import { createServices } from './app/services';
+import { buildSections } from './library/sections';
 import { createLearnerStore } from './store/useStore';
 import type { TokenClient } from './auth/tokenClient';
 import type { LearnerState } from './store/useStore';
@@ -165,14 +166,15 @@ function SignedInApp({
           path="/"
           element={
             <LibraryPage
-              courses={state.courses}
+              sections={buildSections(state)}
               progress={state.progress}
-              // Тимчасово, до нової бібліотеки (Задача 8).
-              catalogSyncing={Object.values(state.catalogStatus).includes('syncing')}
               onAddCourse={async (input) => {
                 await state.addCourse(input);
               }}
+              onPreviewCatalog={(input) => state.previewCatalog(input)}
+              onAddCatalog={(preview) => state.addCatalog(preview)}
               onRemoveCourse={(id) => void state.removeCourse(id)}
+              onRemoveCatalog={(id) => void state.removeCatalog(id)}
             />
           }
         />

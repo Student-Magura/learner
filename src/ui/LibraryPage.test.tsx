@@ -3,31 +3,55 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { LibraryPage } from './LibraryPage';
+import type { CatalogSection, CourseSlot, Section } from '../library/sections';
 import type { Course, ProgressMap } from '../types';
 
-const course: Course = {
-  id: 'c1',
-  title: 'Product Management',
-  addedAt: 1,
-  lastScannedAt: 1,
-  tree: {
-    id: 'c1',
-    kind: 'folder',
-    title: 'Product Management',
-    children: [
-      { id: 'v1', kind: 'video', title: 'Один.mp4', durationSec: 100 },
-      { id: 'v2', kind: 'video', title: 'Два.mp4', durationSec: 100 },
-    ],
-  },
-};
+function makeCourse(id: string, title: string): Course {
+  return {
+    id,
+    title,
+    addedAt: 1,
+    lastScannedAt: 1,
+    tree: {
+      id,
+      kind: 'folder',
+      title,
+      children: [
+        { id: `${id}-v1`, kind: 'video', title: 'Один.mp4', durationSec: 100 },
+        { id: `${id}-v2`, kind: 'video', title: 'Два.mp4', durationSec: 100 },
+      ],
+    },
+  };
+}
+
+const course = makeCourse('c1', 'Product Management');
+const ready = (c: Course): CourseSlot => ({ kind: 'ready', course: c });
+
+function catalog(over: Partial<CatalogSection> = {}): CatalogSection {
+  return {
+    kind: 'catalog',
+    id: 'team-catalog',
+    title: 'Команда дизайну',
+    builtin: false,
+    status: null,
+    busy: false,
+    ready: 1,
+    slots: [ready(makeCourse('t1', 'Типографіка'))],
+    ...over,
+  };
+}
+
+const own = (slots: CourseSlot[] = [ready(course)]): Section => ({ kind: 'own', slots });
 
 function renderPage(over: Partial<Parameters<typeof LibraryPage>[0]> = {}) {
   const props = {
-    courses: [course],
+    sections: [own()] as Section[],
     progress: {} as ProgressMap,
-    catalogSyncing: false,
     onAddCourse: vi.fn(async () => {}),
+    onPreviewCatalog: vi.fn(async () => ({ id: 'x', title: 'X', courses: [] })),
+    onAddCatalog: vi.fn(async () => {}),
     onRemoveCourse: vi.fn(),
+    onRemoveCatalog: vi.fn(),
     ...over,
   };
   render(
@@ -38,6 +62,8 @@ function renderPage(over: Partial<Parameters<typeof LibraryPage>[0]> = {}) {
   return props;
 }
 
+const watched = { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 };
+
 describe('LibraryPage', () => {
   it('показує назву курсу', () => {
     renderPage();
@@ -45,92 +71,159 @@ describe('LibraryPage', () => {
   });
 
   it('показує загальний прогрес курсу за часом', () => {
-    renderPage({
-      progress: {
-        v1: { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 },
-      },
-    });
+    renderPage({ progress: { 'c1-v1': watched } });
     expect(screen.getByText('50%')).toBeInTheDocument();
   });
 
   it('показує кількість переглянутих уроків', () => {
-    renderPage({
-      progress: {
-        v1: { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 },
-      },
-    });
+    renderPage({ progress: { 'c1-v1': watched } });
     expect(screen.getByText(/1 з 2/)).toBeInTheDocument();
   });
 
-  it('на порожній бібліотеці пояснює, що робити', () => {
-    renderPage({ courses: [] });
-    expect(screen.getByText(/додайте перший курс/i)).toBeInTheDocument();
+  it('пропонує продовжити курс, який дивилися останнім', () => {
+    renderPage({ progress: { 'c1-v1': watched } });
+    expect(screen.getByRole('link', { name: /дивитись далі/i })).toHaveAttribute(
+      'href',
+      '/course/c1/lesson/c1-v2',
+    );
   });
 
-  it('прибирає курс після підтвердження', async () => {
+  it('на порожній бібліотеці пояснює, що робити', () => {
+    renderPage({ sections: [] });
+    expect(screen.getByText(/тут поки порожньо/i)).toBeInTheDocument();
+  });
+
+  it('на головному екрані немає поля для посилання', () => {
+    renderPage();
+    expect(screen.queryByLabelText(/посилання на папку/i)).toBeNull();
+  });
+
+  it('«+ Курс» відкриває діалог, додає курс і закриває діалог', async () => {
+    const props = renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Курс' }));
+    const dialog = screen.getByRole('dialog', { name: 'Додати курс' });
+    await userEvent.type(within(dialog).getByLabelText(/посилання на папку/i), 'abcdefghijklmnopqrstuvwxyz');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Додати курс' }));
+    expect(props.onAddCourse).toHaveBeenCalledWith('abcdefghijklmnopqrstuvwxyz');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('«+ Каталог» відкриває діалог каталогу', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Каталог' }));
+    expect(screen.getByRole('dialog', { name: 'Додати каталог курсів' })).toBeInTheDocument();
+  });
+
+  it('кожен каталог — окрема секція з назвою папки, власні — окремо', () => {
+    renderPage({
+      sections: [
+        catalog({ id: 'builtin', title: 'Каталог 2 РІЦ', builtin: true, slots: [ready(makeCourse('b1', 'Основи UX'))] }),
+        catalog(),
+        own(),
+      ],
+    });
+    const builtin = screen.getByRole('region', { name: 'Каталог 2 РІЦ' });
+    const team = screen.getByRole('region', { name: 'Команда дизайну' });
+    const mine = screen.getByRole('region', { name: 'Власні курси' });
+    expect(within(builtin).getByRole('link', { name: 'Основи UX' })).toBeInTheDocument();
+    expect(within(team).getByRole('link', { name: 'Типографіка' })).toBeInTheDocument();
+    expect(within(mine).getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
+  });
+
+  it('вбудований каталог підписаний «для всіх» і не має меню', () => {
+    renderPage({ sections: [catalog({ builtin: true, title: 'Каталог 2 РІЦ' })] });
+    const region = screen.getByRole('region', { name: 'Каталог 2 РІЦ' });
+    expect(within(region).getByText('для всіх')).toBeInTheDocument();
+    expect(within(region).queryByLabelText(/дії з каталогом/i)).toBeNull();
+  });
+
+  it('меню доданого каталогу веде в Drive', async () => {
+    renderPage({ sections: [catalog()] });
+    await userEvent.click(screen.getByLabelText('Дії з каталогом «Команда дизайну»'));
+    expect(screen.getByRole('link', { name: /відкрити в drive/i })).toHaveAttribute(
+      'href',
+      'https://drive.google.com/drive/folders/team-catalog',
+    );
+  });
+
+  it('меню прибирає каталог після підтвердження', async () => {
+    const props = renderPage({ sections: [catalog()] });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await userEvent.click(screen.getByLabelText('Дії з каталогом «Команда дизайну»'));
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати каталог' }));
+    expect(props.onRemoveCatalog).toHaveBeenCalledWith('team-catalog');
+  });
+
+  it('не прибирає каталог, якщо підтвердження скасували', async () => {
+    const props = renderPage({ sections: [catalog()] });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await userEvent.click(screen.getByLabelText('Дії з каталогом «Команда дизайну»'));
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати каталог' }));
+    expect(props.onRemoveCatalog).not.toHaveBeenCalled();
+  });
+
+  it('курси каталогу поштучно не прибираються', () => {
+    renderPage({ sections: [catalog()] });
+    const region = screen.getByRole('region', { name: 'Команда дизайну' });
+    expect(within(region).queryByRole('button', { name: 'Прибрати' })).toBeNull();
+  });
+
+  it('власний курс прибирається після підтвердження', async () => {
     const props = renderPage();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await userEvent.click(screen.getByRole('button', { name: /прибрати/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати' }));
     expect(props.onRemoveCourse).toHaveBeenCalledWith('c1');
   });
 
-  it('не прибирає курс, якщо підтвердження скасували', async () => {
+  it('не прибирає власний курс, якщо підтвердження скасували', async () => {
     const props = renderPage();
     vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await userEvent.click(screen.getByRole('button', { name: /прибрати/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати' }));
     expect(props.onRemoveCourse).not.toHaveBeenCalled();
   });
 
-  describe('каталог', () => {
-    const catalogCourse = (id: string, title: string): Course => ({
-      ...course,
-      id,
-      title,
-      source: 'catalog',
-      tree: { ...course.tree, id, title },
+  it('показує, що каталог оновлюється, з лічильником', () => {
+    renderPage({
+      sections: [
+        catalog({
+          busy: true,
+          ready: 1,
+          slots: [
+            ready(makeCourse('t1', 'Типографіка')),
+            { kind: 'pending', id: 't2', title: 'Моушн', status: 'scanning' },
+          ],
+        }),
+      ],
     });
+    expect(screen.getByRole('status')).toHaveTextContent('Оновлюємо… 1 з 2');
+  });
 
-    it('показує курси каталогу й власні в окремих розділах', () => {
-      renderPage({ courses: [course, catalogCourse('k1', 'Кібербезпека')] });
+  it('без доступу до каталогу попереджає, але показує збережене', () => {
+    renderPage({ sections: [catalog({ status: 'no-access' })] });
+    expect(screen.getByText(/немає доступу до каталогу/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Типографіка' })).toBeInTheDocument();
+  });
 
-      const catalog = screen.getByRole('region', { name: 'Каталог' });
-      const own = screen.getByRole('region', { name: 'Власні курси' });
-      expect(within(catalog).getByRole('link', { name: 'Кібербезпека' })).toBeInTheDocument();
-      expect(within(catalog).queryByRole('link', { name: 'Product Management' })).toBeNull();
-      expect(within(own).getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
+  it.each([
+    ['scanning', 'Скануємо…'],
+    ['no-access', 'Немає доступу до папки'],
+    ['failed', 'Не вдалося завантажити — спробуємо пізніше'],
+    [null, 'Ще не завантажено'],
+  ] as const)('картка курсу без дерева, статус %s', (status, text) => {
+    renderPage({
+      sections: [catalog({ slots: [{ kind: 'pending', id: 't2', title: 'Моушн', status }] })],
     });
+    expect(screen.getByText('Моушн')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Моушн' })).toBeNull();
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
 
-    it('курс каталогу не можна прибрати', () => {
-      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')] });
-      expect(screen.queryByRole('button', { name: /прибрати/i })).toBeNull();
+  it('власний курс без доступу можна прибрати', async () => {
+    const props = renderPage({
+      sections: [own([{ kind: 'pending', id: 'gone', title: 'Старий курс', status: 'no-access' }])],
     });
-
-    it('впорядковує каталог за назвою природним порядком', () => {
-      renderPage({
-        courses: [catalogCourse('k10', '10 - Пізній'), catalogCourse('k2', '2 - Ранній')],
-      });
-      const links = within(screen.getByRole('region', { name: 'Каталог' })).getAllByRole('link');
-      expect(links.map((l) => l.textContent)).toEqual(['2 - Ранній', '10 - Пізній']);
-    });
-
-    it('показує, що каталог оновлюється', () => {
-      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')], catalogSyncing: true });
-      expect(screen.getByRole('status')).toHaveTextContent(/оновлюємо каталог/i);
-    });
-
-    it('показує індикатор і тоді, коли каталог ще порожній', () => {
-      renderPage({ courses: [], catalogSyncing: true });
-      expect(screen.getByRole('status')).toHaveTextContent(/оновлюємо каталог/i);
-    });
-
-    it('не показує індикатор, коли оновлення закінчилось', () => {
-      renderPage({ courses: [catalogCourse('k1', 'Кібербезпека')] });
-      expect(screen.queryByRole('status')).toBeNull();
-    });
-
-    it('без курсів каталогу розділу каталогу немає', () => {
-      renderPage({ courses: [course] });
-      expect(screen.queryByRole('region', { name: 'Каталог' })).toBeNull();
-    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати' }));
+    expect(props.onRemoveCourse).toHaveBeenCalledWith('gone');
   });
 });

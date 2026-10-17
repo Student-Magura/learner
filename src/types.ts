@@ -26,11 +26,6 @@ export type Course = {
   addedAt: number;
   tree: FolderNode;
   lastScannedAt: number;
-  /**
-   * 'catalog' — підпапка спільного каталогу: зʼявляється в кожного сама і прибрати її
-   * не можна. Відсутнє поле = власний курс (так лежать записи, створені до каталогу).
-   */
-  source?: 'catalog' | 'own';
 };
 
 export type ProgressRecord = {
