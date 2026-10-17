@@ -311,7 +311,7 @@ function CourseCard({
         </Link>
         {onRemove && <RemoveButton id={course.id} title={course.title} onRemove={onRemove} />}
       </div>
-      <p className="text-sm text-muted">
+      <p className="mt-auto text-sm text-muted">
         {stats.completedCount} з {stats.videoCount} уроків
       </p>
       <ProgressBar ratio={stats.ratio} approximate={stats.approximate} />
