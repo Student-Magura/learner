@@ -47,3 +47,36 @@ export type ProgressMap = Record<string, ProgressRecord>;
 export function emptyProgress(): ProgressMap {
   return {};
 }
+
+/**
+ * Те, що користувач обрав сам: каталог або власний курс. Синхронізується між
+ * пристроями через learner-library.json. Ключ у Library — Drive folderId.
+ */
+export type Subscription = {
+  kind: 'catalog' | 'course';
+  /** Назва папки на момент додавання — щоб на новому пристрої картка мала підпис ще до скану. */
+  title: string;
+  addedAt: number;
+  /** epoch ms. Основа для per-entry last-write-wins. */
+  updatedAt: number;
+  /** Tombstone: «прибрати» мусить дійти до інших пристроїв. */
+  removed: boolean;
+};
+
+export type Library = Record<string, Subscription>;
+
+/** Підпапка каталогу — курс, відомий за назвою ще до сканування. */
+export type CatalogEntry = { id: string; title: string };
+
+/** Локальний кеш складу каталогу. Завжди перебудовується з Drive. */
+export type CatalogSnapshot = {
+  /** Drive folderId каталогу. */
+  id: string;
+  /** Назва папки Drive; порожня, поки каталог не опитано після міграції. */
+  title: string;
+  courses: CatalogEntry[];
+  lastSyncedAt: number;
+};
+
+/** Що знайшлося за посиланням на каталог — показується до підтвердження. */
+export type CatalogPreview = { id: string; title: string; courses: CatalogEntry[] };

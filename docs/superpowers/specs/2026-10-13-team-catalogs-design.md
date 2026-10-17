@@ -58,6 +58,7 @@
 /** Синхронізується через learner-library.json. Ключ — Drive folderId. */
 type Subscription = {
   kind: 'catalog' | 'course';
+  title: string;       // назва папки на момент додавання — підпис картки до скану
   addedAt: number;
   /** epoch ms. Основа для per-entry last-write-wins. */
   updatedAt: number;
@@ -70,7 +71,7 @@ type Library = Record<string, Subscription>;
 type CatalogSnapshot = {
   id: string;          // Drive folderId каталогу
   title: string;       // назва папки Drive
-  courseIds: string[]; // folderId підпапок на момент останнього listFolder
+  courses: { id: string; title: string }[]; // підпапки на момент останнього listFolder; назва — для картки «Скануємо…»
   lastSyncedAt: number;
 };
 
@@ -81,7 +82,7 @@ type Course = { id: string; title: string; addedAt: number; tree: FolderNode; la
 **Секції на екрані виводяться, а не зберігаються:**
 - вбудований каталог — неявна, неприбиранна підписка, якої немає в `Library`; якщо його id
   випадково опиниться в `Library`, показується один раз, як вбудований;
-- кожна активна (`removed: false`) підписка `catalog` → секція з курсами з `CatalogSnapshot.courseIds`;
+- кожна активна (`removed: false`) підписка `catalog` → секція з курсами з `CatalogSnapshot.courses`;
 - активні підписки `course` → секція «Власні курси».
 
 Наслідки:
