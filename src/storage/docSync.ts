@@ -40,6 +40,7 @@ export function createDocSync<T>(
   const debounceMs = options.debounceMs ?? SYNC_DEBOUNCE_MS;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<T> | null = null;
+  let rerun: Promise<T> | null = null;
 
   async function run(): Promise<T> {
     // Незалежні читання запускаємо паралельно.
@@ -82,11 +83,25 @@ export function createDocSync<T>(
 
   function syncNow(): Promise<T> {
     // Один прохід за раз: паралельні злиття могли б перезаписати одне одного.
-    if (running) return running;
-    running = run().finally(() => {
-      running = null;
+    if (running) {
+      // Запис міг приїхати вже після злиття поточного проходу — він його не
+      // запушить. Тому просимо ще один прохід; кілька прохань злипаються в одне.
+      const next = () => {
+        rerun = null;
+        return running ?? startRun();
+      };
+      rerun ??= running.then(next, next);
+      return rerun;
+    }
+    return startRun();
+  }
+
+  function startRun(): Promise<T> {
+    const current = run().finally(() => {
+      if (running === current) running = null;
     });
-    return running;
+    running = current;
+    return current;
   }
 
   return {

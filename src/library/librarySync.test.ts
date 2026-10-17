@@ -87,4 +87,41 @@ describe('createLibrarySync', () => {
     );
     expect(await db.getMeta('pushedLibrary')).toEqual({ cat1: sub(10) });
   });
+
+  it('flush під час уже запущеного проходу пушить і підписку, що зʼявилась посеред нього', async () => {
+    const drive = fakeAppData();
+    const sync = createLibrarySync(db, drive);
+    await db.putSubscription('cat1', sub(10));
+
+    // Перший прохід зависає на мережевому записі — уже ПІСЛЯ mergeIntoLocal.
+    const realWrite = drive.writeAppData;
+    let reached!: () => void;
+    const atWrite = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    drive.writeAppData = async (name, content) => {
+      calls += 1;
+      if (calls === 1) {
+        reached();
+        await gate;
+      }
+      return realWrite(name, content);
+    };
+
+    const first = sync.syncNow();
+    await atWrite;
+    // Запис користувача, що приїхав після злиття першого проходу.
+    await db.putSubscription('cat2', sub(11));
+    const flushed = sync.flush();
+    release();
+    await Promise.all([first, flushed]);
+
+    const remote = drive.files[LIBRARY_FILE]?.content as Record<string, unknown>;
+    expect(Object.keys(remote).sort()).toEqual(['cat1', 'cat2']);
+  });
 });

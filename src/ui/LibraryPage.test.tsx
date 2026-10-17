@@ -146,6 +146,55 @@ describe('LibraryPage', () => {
     );
   });
 
+  describe('меню каталогу закривається', () => {
+    const menu = () => screen.getByLabelText('Дії з каталогом «Команда дизайну»').closest('details');
+
+    async function open() {
+      renderPage({ sections: [catalog()] });
+      await userEvent.click(screen.getByLabelText('Дії з каталогом «Команда дизайну»'));
+      expect(menu()).toHaveAttribute('open');
+    }
+
+    it('має роль кнопки', () => {
+      renderPage({ sections: [catalog()] });
+      expect(screen.getByRole('button', { name: 'Дії з каталогом «Команда дизайну»' })).toBeInTheDocument();
+    });
+
+    it('на Escape', async () => {
+      await open();
+      await userEvent.keyboard('{Escape}');
+      expect(menu()).not.toHaveAttribute('open');
+    });
+
+    it('після «Відкрити в Drive»', async () => {
+      await open();
+      await userEvent.click(screen.getByRole('link', { name: /відкрити в drive/i }));
+      expect(menu()).not.toHaveAttribute('open');
+    });
+
+    it('після «Прибрати каталог», навіть якщо підтвердження скасували', async () => {
+      await open();
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      await userEvent.click(screen.getByRole('button', { name: 'Прибрати каталог' }));
+      expect(menu()).not.toHaveAttribute('open');
+    });
+
+    it('на клік поза меню', async () => {
+      await open();
+      await userEvent.click(document.body);
+      expect(menu()).not.toHaveAttribute('open');
+    });
+  });
+
+  it('безіменна картка в очікуванні питає про «Без назви», а не про порожні лапки', async () => {
+    renderPage({
+      sections: [own([{ kind: 'pending', id: 'p1', title: '', status: null }])],
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Прибрати' }));
+    expect(confirm).toHaveBeenCalledWith('Прибрати «Без назви» з бібліотеки?');
+  });
+
   it('меню прибирає каталог після підтвердження', async () => {
     const props = renderPage({ sections: [catalog()] });
     vi.spyOn(window, 'confirm').mockReturnValue(true);

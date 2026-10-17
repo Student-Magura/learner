@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AddCatalogDialog } from './AddCatalogDialog';
 import { AddCourseDialog } from './AddCourseDialog';
@@ -178,43 +178,75 @@ function CatalogBlock({
           )
         )}
         {!section.builtin && (
-          <details className="relative ml-auto">
-            <summary
-              aria-label={`Дії з каталогом «${section.title}»`}
-              className="flex h-11 w-11 cursor-pointer list-none items-center justify-center text-xl hover:bg-soft [&::-webkit-details-marker]:hidden"
-            >
-              ⋯
-            </summary>
-            <div className="absolute right-0 z-10 mt-1 flex min-w-56 flex-col border-2 border-rule bg-surface shadow-[4px_4px_0_var(--rule)]">
-              <a
-                href={`https://drive.google.com/drive/folders/${section.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-h-11 px-4 py-3 text-sm hover:bg-soft"
-              >
-                Відкрити в Drive ↗
-              </a>
-              <button
-                type="button"
-                className="min-h-11 px-4 py-3 text-left text-sm text-danger hover:bg-soft"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Прибрати каталог «${section.title}» з бібліотеки? Прогрес перегляду збережеться.`,
-                    )
-                  ) {
-                    onRemove(section.id);
-                  }
-                }}
-              >
-                Прибрати каталог
-              </button>
-            </div>
-          </details>
+          <CatalogMenu section={section} onRemove={onRemove} />
         )}
       </div>
       {total > 0 && <CourseGrid slots={section.slots} progress={progress} />}
     </section>
+  );
+}
+
+/** Меню «⋯» каталогу: <details> сам не закривається ні кліком поза собою, ні Escape, ні вибором пункту. */
+function CatalogMenu({ section, onRemove }: { section: CatalogSection; onRemove(id: string): void }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const close = () => ref.current?.removeAttribute('open');
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ref.current?.contains(event.target)) close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && ref.current?.open) {
+        close();
+        ref.current.querySelector('summary')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  return (
+    <details ref={ref} className="relative ml-auto">
+      <summary
+        role="button"
+        aria-label={`Дії з каталогом «${section.title}»`}
+        className="flex h-11 w-11 cursor-pointer list-none items-center justify-center text-xl hover:bg-soft [&::-webkit-details-marker]:hidden"
+      >
+        ⋯
+      </summary>
+      <div
+        className="absolute right-0 z-10 mt-1 flex min-w-56 flex-col border-2 border-rule bg-surface shadow-[4px_4px_0_var(--rule)]"
+        onClick={() => ref.current?.removeAttribute('open')}
+      >
+        <a
+          href={`https://drive.google.com/drive/folders/${section.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="min-h-11 px-4 py-3 text-sm hover:bg-soft"
+        >
+          Відкрити в Drive ↗
+        </a>
+        <button
+          type="button"
+          className="min-h-11 px-4 py-3 text-left text-sm text-danger hover:bg-soft"
+          onClick={() => {
+            if (
+              window.confirm(
+                `Прибрати каталог «${section.title}» з бібліотеки? Прогрес перегляду збережеться.`,
+              )
+            ) {
+              onRemove(section.id);
+            }
+          }}
+        >
+          Прибрати каталог
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -310,7 +342,7 @@ function PendingCard({
     <li className="flex flex-col gap-4 border-t-2 border-line pt-4 text-muted">
       <div className="flex items-start justify-between gap-4">
         <span className="text-xl font-bold leading-snug">{title || 'Без назви'}</span>
-        {onRemove && <RemoveButton id={id} title={title} onRemove={onRemove} />}
+        {onRemove && <RemoveButton id={id} title={title || 'Без назви'} onRemove={onRemove} />}
       </div>
       <p
         className={`text-sm ${status === 'no-access' ? 'text-danger' : ''} ${

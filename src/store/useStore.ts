@@ -78,6 +78,10 @@ function rethrowFriendly(cause: unknown): never {
         'що папкою поділилися з вашим акаунтом.',
     );
   }
+  if (cause instanceof TypeError) {
+    // fetch без мережі кидає TypeError('Failed to fetch') — це не помилка Drive.
+    throw new Error('Немає зʼєднання з Google Drive. Перевірте інтернет і спробуйте ще раз.');
+  }
   throw cause;
 }
 
@@ -240,7 +244,9 @@ export function createLearnerStore(
           while (pending) {
             const job = pending;
             pending = null;
-            await runPass(job.refresh).catch(() => {});
+            await runPass(job.refresh).catch((cause: unknown) => {
+              console.warn('Прохід reconcile не вдався', cause);
+            });
           }
         } finally {
           running = null;

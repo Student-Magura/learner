@@ -190,6 +190,17 @@ describe('addCourse', () => {
     await expect(store.getState().addCourse(ROOT_ID)).rejects.toThrow(/доступ/i);
   });
 
+  it('мережевий збій при додаванні курсу — зрозуміле повідомлення про зʼєднання', async () => {
+    const api = fakeApi();
+    api.getFile = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const store = createLearnerStore({ db, api, sync: fakeSync(), librarySync: fakeLibrarySync() });
+    await store.getState().init();
+
+    await expect(store.getState().addCourse(ROOT_ID)).rejects.toThrow(/Немає зʼєднання з Google Drive/);
+  });
+
   it('повторне додавання того самого курсу не створює дубль', async () => {
     const store = createLearnerStore({ db, api: fakeApi(), sync: fakeSync(), librarySync: fakeLibrarySync() });
     await store.getState().init();
@@ -538,6 +549,27 @@ describe('бібліотека й каталоги', () => {
       expect(store.getState().catalogStatus[CATALOG_ID]).toBeUndefined();
     });
 
+    it('прохід, що впав, пишеться в консоль, а черга йде далі', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      let broken = false;
+      const store = catalogStore(driveWith(), {
+        now: () => {
+          if (broken) throw new Error('boom');
+          return 1_000;
+        },
+      });
+      await started(store);
+
+      broken = true;
+      await store.getState().reconcile();
+      expect(warn).toHaveBeenCalledOnce();
+
+      broken = false;
+      await store.getState().reconcile();
+      expect(store.getState().courses).toHaveLength(2);
+      warn.mockRestore();
+    });
+
     it('одночасні запити злипаються: поточний прохід і ще один', async () => {
       const api = driveWith();
       const store = catalogStore(api);
@@ -610,6 +642,19 @@ describe('бібліотека й каталоги', () => {
   });
 
   describe('previewCatalog', () => {
+    it('мережевий збій — зрозуміле повідомлення про зʼєднання', async () => {
+      const api = driveWith();
+      const store = catalogStore(api);
+      await started(store);
+      api.getFile = vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      });
+
+      await expect(store.getState().previewCatalog(TEAM_ID)).rejects.toThrow(
+        /Немає зʼєднання з Google Drive/,
+      );
+    });
+
     it('показує назву каталогу й курси, нічого не записуючи', async () => {
       const store = catalogStore();
       await started(store);

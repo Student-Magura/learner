@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { folderInputClass } from './AddCourseDialog';
 import { primaryButton, secondaryButton } from './buttons';
@@ -36,6 +36,16 @@ export function AddCatalogDialog({ onPreview, onAdd, onClose }: AddCatalogDialog
   const [preview, setPreview] = useState<CatalogPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Кнопка, на яку переходить фокус на кроці 2: та, що фокусувалась, зникла з DOM.
+  const addRef = useRef<HTMLButtonElement>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+  const onStepTwo = preview !== null;
+  const emptyPreview = preview?.courses.length === 0;
+
+  useEffect(() => {
+    if (!onStepTwo) return;
+    (emptyPreview ? backRef : addRef).current?.focus();
+  }, [onStepTwo, emptyPreview]);
 
   async function handlePreview(event: React.FormEvent) {
     event.preventDefault();
@@ -134,6 +144,7 @@ export function AddCatalogDialog({ onPreview, onAdd, onClose }: AddCatalogDialog
         {errorLine}
         <div className="flex justify-end gap-2">
           <button
+            ref={backRef}
             type="button"
             onClick={() => {
               setPreview(null);
@@ -144,6 +155,7 @@ export function AddCatalogDialog({ onPreview, onAdd, onClose }: AddCatalogDialog
             Назад
           </button>
           <button
+            ref={addRef}
             type="button"
             disabled={busy || empty}
             onClick={() => void handleAdd(preview)}

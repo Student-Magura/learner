@@ -59,6 +59,18 @@ describe('AddCatalogDialog', () => {
     expect(props.onClose).toHaveBeenCalled();
   });
 
+  it('після «Далі» фокус переходить на «Додати каталог»', async () => {
+    renderDialog();
+    await toPreview();
+    expect(await screen.findByRole('button', { name: 'Додати каталог' })).toHaveFocus();
+  });
+
+  it('для порожнього каталогу фокус — на «Назад»', async () => {
+    renderDialog({ onPreview: vi.fn(async () => ({ ...preview, courses: [] })) });
+    await toPreview();
+    expect(await screen.findByRole('button', { name: 'Назад' })).toHaveFocus();
+  });
+
   it('«Назад» повертає до поля, зберігаючи введене', async () => {
     renderDialog();
     await toPreview();
