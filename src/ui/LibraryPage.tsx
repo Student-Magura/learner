@@ -95,7 +95,7 @@ export function LibraryPage({
         <h2 id="own-heading" className="text-2xl font-extrabold tracking-tight">
           Власні курси
         </h2>
-        <AddCourseDialog onSubmit={onAddCourse} />
+        <AddCourseDialog onSubmit={onAddCourse} onClose={() => {}} />
         {own.length === 0 ? (
           <p className="text-muted">
             Поки що порожньо — додайте перший курс, вставивши посилання на папку Google Drive.

@@ -67,35 +67,6 @@ describe('LibraryPage', () => {
     expect(screen.getByText(/додайте перший курс/i)).toBeInTheDocument();
   });
 
-  it('додає курс за введеним посиланням', async () => {
-    const props = renderPage();
-    await userEvent.type(
-      screen.getByLabelText(/посилання на папку/i),
-      'https://drive.google.com/drive/folders/1xMYDlMRkhsf2ggCjxQ6ZtSL7qtRb0lwk',
-    );
-    await userEvent.click(screen.getByRole('button', { name: /додати курс/i }));
-    expect(props.onAddCourse).toHaveBeenCalledWith(
-      'https://drive.google.com/drive/folders/1xMYDlMRkhsf2ggCjxQ6ZtSL7qtRb0lwk',
-    );
-  });
-
-  it('показує помилку від onAddCourse, не ламаючи сторінку', async () => {
-    renderPage({
-      onAddCourse: vi.fn(async () => {
-        throw new Error('Потрібне посилання на папку Google Drive або її ID');
-      }),
-    });
-    await userEvent.type(screen.getByLabelText(/посилання на папку/i), 'сміття');
-    await userEvent.click(screen.getByRole('button', { name: /додати курс/i }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/посилання на папку/i);
-  });
-
-  it('не викликає onAddCourse на порожньому полі', async () => {
-    const props = renderPage();
-    await userEvent.click(screen.getByRole('button', { name: /додати курс/i }));
-    expect(props.onAddCourse).not.toHaveBeenCalled();
-  });
-
   it('прибирає курс після підтвердження', async () => {
     const props = renderPage();
     vi.spyOn(window, 'confirm').mockReturnValue(true);

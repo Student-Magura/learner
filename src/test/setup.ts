@@ -18,3 +18,17 @@ if (!('serviceWorker' in navigator)) {
     configurable: true,
   });
 }
+
+// jsdom не реалізує showModal/close у <dialog>. Мінімальна заміна: перемикає open
+// і, як браузер, шле 'close' лише тоді, коли діалог справді був відкритий.
+// Фокус-пастку й Esc тут не моделюємо — це робота браузера.
+if (typeof HTMLDialogElement !== 'undefined' && !HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    if (!this.open) return;
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
+}
