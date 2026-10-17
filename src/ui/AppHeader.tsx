@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { MoonIcon, SunIcon } from './icons';
 import { useTheme } from './theme';
+import { showWelcome } from './WelcomeCard';
 
 export function ThemeToggle() {
   const [theme, toggle] = useTheme();
@@ -14,6 +15,26 @@ export function ThemeToggle() {
       className="flex h-11 w-11 items-center justify-center text-fg hover:bg-soft"
     >
       {dark ? <SunIcon /> : <MoonIcon />}
+    </button>
+  );
+}
+
+/** Вітальна картка живе на головній — туди й ведемо, нагору, де вона стоїть. */
+function HelpButton() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        showWelcome();
+        navigate('/');
+        window.scrollTo(0, 0);
+      }}
+      aria-label="Як це працює"
+      title="Як це працює"
+      className="flex h-11 w-11 items-center justify-center text-lg font-bold text-fg hover:bg-soft"
+    >
+      ?
     </button>
   );
 }
@@ -33,7 +54,10 @@ export function AppHeader() {
         <Link to="/" aria-label="Learner — мої курси">
           <Logo />
         </Link>
-        <ThemeToggle />
+        <div className="flex">
+          <HelpButton />
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

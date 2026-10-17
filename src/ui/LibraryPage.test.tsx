@@ -1,7 +1,7 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryPage } from './LibraryPage';
 import type { CatalogSection, CourseSlot, Section } from '../library/sections';
 import type { Course, ProgressMap } from '../types';
@@ -62,6 +62,8 @@ function renderPage(over: Partial<Parameters<typeof LibraryPage>[0]> = {}) {
   return props;
 }
 
+beforeEach(() => localStorage.clear());
+
 const watched = { positionSec: 100, durationSec: 100, completed: true, updatedAt: 1 };
 
 describe('LibraryPage', () => {
@@ -88,9 +90,44 @@ describe('LibraryPage', () => {
     );
   });
 
-  it('на порожній бібліотеці пояснює, що робити', () => {
+  it('вітальна картка пояснює, що можна додати свій курс чи каталог', () => {
+    renderPage();
+    const card = screen.getByRole('region', { name: 'Як працює Learner' });
+    expect(within(card).getByText(/одна папка з відео/i)).toBeInTheDocument();
+    expect(within(card).getByText(/кожна підпапка — окремий курс/i)).toBeInTheDocument();
+  });
+
+  it('закрита вітальна картка не повертається після перезавантаження', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Закрити пояснення' }));
+    expect(screen.queryByRole('region', { name: 'Як працює Learner' })).toBeNull();
+
+    cleanup();
+    renderPage();
+    expect(screen.queryByRole('region', { name: 'Як працює Learner' })).toBeNull();
+  });
+
+  it('без власних курсів секція є й запрошує додати свій курс', async () => {
     renderPage({ sections: [] });
-    expect(screen.getByText(/тут поки порожньо/i)).toBeInTheDocument();
+    const mine = screen.getByRole('region', { name: 'Власні курси' });
+    expect(within(mine).getByText(/ваші курси з google drive/i)).toBeInTheDocument();
+
+    await userEvent.click(within(mine).getByRole('button', { name: '+ Курс' }));
+    expect(screen.getByRole('dialog', { name: 'Додати курс' })).toBeInTheDocument();
+  });
+
+  it('запрошення пропонує й каталог курсів', async () => {
+    renderPage({ sections: [] });
+    const mine = screen.getByRole('region', { name: 'Власні курси' });
+    await userEvent.click(within(mine).getByRole('button', { name: 'каталог курсів' }));
+    expect(screen.getByRole('dialog', { name: 'Додати каталог курсів' })).toBeInTheDocument();
+  });
+
+  it('коли власні курси є, запрошення лишається останньою плиткою', async () => {
+    renderPage();
+    const mine = screen.getByRole('region', { name: 'Власні курси' });
+    await userEvent.click(within(mine).getByRole('button', { name: '+ Додати свій курс' }));
+    expect(screen.getByRole('dialog', { name: 'Додати курс' })).toBeInTheDocument();
   });
 
   it('на головному екрані немає поля для посилання', () => {

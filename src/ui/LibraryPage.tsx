@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { AddCatalogDialog } from './AddCatalogDialog';
 import { AddCourseDialog } from './AddCourseDialog';
 import { ProgressBar } from './ProgressBar';
+import { WelcomeCard } from './WelcomeCard';
 import { primaryButton, secondaryButton } from './buttons';
 import { PlayIcon } from './icons';
 import { lessonTitle } from './lessonTitle';
 import { aggregate, findResumeVideoId, flattenVideos } from '../progress/aggregate';
-import type { CatalogSection, CourseSlot, CourseStatus, Section } from '../library/sections';
+import type { CatalogSection, CourseSlot, CourseStatus, OwnSection, Section } from '../library/sections';
 import type { CatalogPreview, Course, ProgressMap } from '../types';
 
 export type LibraryPageProps = {
@@ -63,6 +64,8 @@ export function LibraryPage({
 }: LibraryPageProps) {
   const [dialog, setDialog] = useState<'course' | 'catalog' | null>(null);
   const resume = findContinue(visibleCourses(sections), progress);
+  // «Власні курси» видно завжди: порожня секція — це запрошення додати свою папку з Drive.
+  const own = sections.find((s): s is OwnSection => s.kind === 'own') ?? { kind: 'own', slots: [] };
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-8 sm:py-12">
@@ -87,6 +90,8 @@ export function LibraryPage({
         </div>
       </div>
 
+      <WelcomeCard />
+
       {resume && (
         <section className="flex flex-col gap-4 bg-hero p-6 text-on-hero sm:p-10">
           <span className="text-xs font-bold uppercase tracking-[0.12em] opacity-80">
@@ -108,30 +113,30 @@ export function LibraryPage({
         </section>
       )}
 
-      {sections.length === 0 ? (
-        <p className="border-2 border-dashed border-line p-8 text-center text-muted">
-          Тут поки порожньо. Додайте курс або каталог курсів вашої команди за посиланням на
-          папку Google Drive.
-        </p>
-      ) : (
-        sections.map((section) =>
-          section.kind === 'catalog' ? (
+      {sections.map(
+        (section) =>
+          section.kind === 'catalog' && (
             <CatalogBlock
               key={section.id}
               section={section}
               progress={progress}
               onRemove={onRemoveCatalog}
             />
-          ) : (
-            <section key="own" aria-labelledby="own-heading" className="flex flex-col gap-6">
-              <h2 id="own-heading" className="text-2xl font-extrabold tracking-tight">
-                Власні курси
-              </h2>
-              <CourseGrid slots={section.slots} progress={progress} onRemove={onRemoveCourse} />
-            </section>
           ),
-        )
       )}
+
+      <section aria-labelledby="own-heading" className="flex flex-col gap-6">
+        <h2 id="own-heading" className="text-2xl font-extrabold tracking-tight">
+          Власні курси
+        </h2>
+        <CourseGrid slots={own.slots} progress={progress} onRemove={onRemoveCourse}>
+          <InviteTile
+            compact={own.slots.length > 0}
+            onAddCourse={() => setDialog('course')}
+            onAddCatalog={() => setDialog('catalog')}
+          />
+        </CourseGrid>
+      </section>
 
       {dialog === 'course' && (
         <AddCourseDialog onSubmit={onAddCourse} onClose={() => setDialog(null)} />
@@ -255,10 +260,13 @@ function CourseGrid({
   slots,
   progress,
   onRemove,
+  children,
 }: {
   slots: CourseSlot[];
   progress: ProgressMap;
   onRemove?(id: string): void;
+  /** Додаткова плитка в кінці сітки — запрошення додати курс. */
+  children?: React.ReactNode;
 }) {
   return (
     <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -275,7 +283,57 @@ function CourseGrid({
           />
         ),
       )}
+      {children}
     </ul>
+  );
+}
+
+/** Плитка-запрошення у «Власних курсах»: велика, поки секція порожня, далі — скромна. */
+function InviteTile({
+  compact,
+  onAddCourse,
+  onAddCatalog,
+}: {
+  compact: boolean;
+  onAddCourse(): void;
+  onAddCatalog(): void;
+}) {
+  if (compact) {
+    return (
+      <li className="flex">
+        <button
+          type="button"
+          onClick={onAddCourse}
+          className="min-h-24 flex-1 border-2 border-dashed border-line text-[15px] font-semibold text-muted hover:border-rule hover:text-fg"
+        >
+          + Додати свій курс
+        </button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex flex-col items-start gap-3 border-2 border-dashed border-line p-6 sm:col-span-2">
+      <span className="text-xl font-bold leading-snug">Ваші курси з Google Drive</span>
+      <p className="text-sm text-muted">
+        Вставте посилання на папку з відео — і вона зʼявиться тут із прогресом.
+      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <button type="button" onClick={onAddCourse} className={primaryButton}>
+          + Курс
+        </button>
+        <span className="text-sm text-muted">
+          або{' '}
+          <button
+            type="button"
+            onClick={onAddCatalog}
+            className="min-h-11 font-semibold text-fg underline underline-offset-4 hover:no-underline"
+          >
+            каталог курсів
+          </button>
+        </span>
+      </div>
+    </li>
   );
 }
 
