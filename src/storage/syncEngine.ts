@@ -1,19 +1,14 @@
+import { createDocSync } from './docSync';
 import { mergeProgress } from './mergeProgress';
+import type { DocSync } from './docSync';
 import type { LearnerDb } from './db';
 import type { DriveApi } from '../drive/api';
 import type { ProgressMap, ProgressRecord } from '../types';
 
+export { SYNC_DEBOUNCE_MS } from './docSync';
 export const PROGRESS_FILE = 'learner-progress.json';
-export const SYNC_DEBOUNCE_MS = 10_000;
 
-const REMOTE_MODIFIED_KEY = 'remoteModifiedTime';
-const PUSHED_PROGRESS_KEY = 'pushedProgress';
-
-export type SyncEngine = {
-  syncNow(): Promise<ProgressMap>;
-  scheduleSync(): void;
-  flush(): Promise<void>;
-};
+export type SyncEngine = DocSync<ProgressMap>;
 
 /**
  * Файл поза контролем застосунку може містити зіпсовані або старі дані.
@@ -66,83 +61,19 @@ function sameProgress(a: ProgressMap, b: ProgressMap): boolean {
 
 export function createSyncEngine(
   db: LearnerDb,
-  api: DriveApi,
+  api: Pick<DriveApi, 'statAppData' | 'readAppData' | 'writeAppData'>,
   options: { debounceMs?: number } = {},
 ): SyncEngine {
-  const debounceMs = options.debounceMs ?? SYNC_DEBOUNCE_MS;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let running: Promise<ProgressMap> | null = null;
-
-  async function run(): Promise<ProgressMap> {
-    // Незалежні читання запускаємо паралельно.
-    const [local, stat, lastSeen, pushed] = await Promise.all([
-      db.getProgress(),
-      api.statAppData(PROGRESS_FILE),
-      db.getMeta<string>(REMOTE_MODIFIED_KEY),
-      db.getMeta<ProgressMap>(PUSHED_PROGRESS_KEY),
-    ]);
-
-    // Файл не змінився з нашого останнього злиття — тягнути його немає сенсу.
-    const remoteChanged = stat !== null && stat.modifiedTime !== lastSeen;
-
-    let remote: ProgressMap = {};
-    if (remoteChanged) {
-      const payload = await api.readAppData(PROGRESS_FILE);
-      remote = parseProgress(payload?.content);
-    }
-
-    // `local` — знімок, зроблений ДО мережевих походів вище. За цей час
-    // користувач міг щось відмітити, тому остаточне злиття робиться проти
-    // поточного вмісту сховища, в одній транзакції з записом: інакше запис,
-    // що приїхав у вікно очікування, зник би зі сховища назавжди.
-    const merged = await db.mergeIntoProgress(mergeProgress(local, remote));
-
-    // Пушимо, якщо те, що ми надіслали б, відрізняється від того, що ми надсилали
-    // востаннє — а не лише тоді, коли ІНШИЙ пристрій щось змінив: локальний прогрес
-    // теж міг просунутися відтоді.
-    const mustPush = stat === null || !sameProgress(merged, pushed ?? {});
-    if (mustPush) {
-      const { modifiedTime } = await api.writeAppData(PROGRESS_FILE, merged);
-      await db.setMeta(REMOTE_MODIFIED_KEY, modifiedTime);
-      await db.setMeta(PUSHED_PROGRESS_KEY, merged);
-    } else if (stat !== null) {
-      await db.setMeta(REMOTE_MODIFIED_KEY, stat.modifiedTime);
-    }
-
-    return merged;
-  }
-
-  function syncNow(): Promise<ProgressMap> {
-    // Один прохід за раз: паралельні злиття могли б перезаписати одне одного.
-    if (running) return running;
-    running = run().finally(() => {
-      running = null;
-    });
-    return running;
-  }
-
-  return {
-    syncNow,
-
-    scheduleSync() {
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        // Мережа може бути відсутня — це нормальний стан, не помилка застосунку.
-        void syncNow().catch(() => {});
-      }, debounceMs);
-    },
-
-    async flush() {
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      try {
-        await syncNow();
-      } catch {
-        // Прогрес уже в IndexedDB; злиття відбудеться при наступному запуску.
-      }
-    },
-  };
+  return createDocSync(db, api, {
+    file: PROGRESS_FILE,
+    parse: parseProgress,
+    merge: mergeProgress,
+    same: sameProgress,
+    empty: () => ({}),
+    readLocal: () => db.getProgress(),
+    mergeIntoLocal: (map) => db.mergeIntoProgress(map),
+    // Імена з часів, коли синхронізувався лише прогрес: нові спричинили б зайвий повний push.
+    metaKeys: { remoteModified: 'remoteModifiedTime', pushed: 'pushedProgress' },
+    debounceMs: options.debounceMs,
+  });
 }
